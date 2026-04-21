@@ -1,0 +1,161 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'backend/**'
+      - 'packaging/**'
+      - '.github/workflows/windows-installer.yml'
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    env:
+      PY_VERSION: "3.11.9"
+      PG_VERSION: "16.4-1"
+      NSSM_VERSION: "2.24"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------------
+      # 1. Flutter app — build Windows Release
+      # ----------------------------------------------------------------------
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: Flutter build windows (release)
+        working-directory: app
+        run: flutter build windows --release
+
+      # ----------------------------------------------------------------------
+      # 2. Python embedded + backend requirements
+      # ----------------------------------------------------------------------
+      - name: Download Python embedded
+        shell: pwsh
+        run: |
+          $url = "https://www.python.org/ftp/python/$env:PY_VERSION/python-$env:PY_VERSION-embed-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile python-embed.zip
+          Expand-Archive python-embed.zip -DestinationPath python-embed
+          # Enable `import site` so pip works
+          $pth = Get-ChildItem python-embed -Filter "python*._pth" | Select-Object -First 1
+          (Get-Content $pth.FullName) -replace '^#import site','import site' | Set-Content $pth.FullName
+
+      - name: Bootstrap pip in embedded Python
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile get-pip.py
+          .\python-embed\python.exe get-pip.py --no-warn-script-location
+
+      - name: Install backend requirements into embedded Python
+        shell: pwsh
+        working-directory: backend
+        run: |
+          $py = "$env:GITHUB_WORKSPACE\python-embed\python.exe"
+          & $py -m pip install --no-warn-script-location --upgrade pip
+          & $py -m pip install --no-warn-script-location -r requirements.txt
+
+      - name: Sanity-check embedded Python imports
+        shell: pwsh
+        run: |
+          $py = "$env:GITHUB_WORKSPACE\python-embed\python.exe"
+          & $py -c "import fastapi, sqlalchemy, psycopg, alembic, bcrypt, reportlab; print('OK')"
+
+      # ----------------------------------------------------------------------
+      # 3. Postgres portable binaries (EnterpriseDB zip)
+      # ----------------------------------------------------------------------
+      - name: Download Postgres binaries
+        shell: pwsh
+        run: |
+          $url = "https://get.enterprisedb.com/postgresql/postgresql-$env:PG_VERSION-windows-x64-binaries.zip"
+          Invoke-WebRequest -Uri $url -OutFile pgsql.zip
+          Expand-Archive pgsql.zip -DestinationPath pgsql-extract
+          if (!(Test-Path pgsql-extract\pgsql)) { throw "Unexpected zip layout" }
+
+      # ----------------------------------------------------------------------
+      # 4. NSSM
+      # ----------------------------------------------------------------------
+      - name: Download NSSM
+        shell: pwsh
+        run: |
+          $url = "https://nssm.cc/release/nssm-$env:NSSM_VERSION.zip"
+          Invoke-WebRequest -Uri $url -OutFile nssm.zip
+          Expand-Archive nssm.zip -DestinationPath nssm-extract
+
+      # ----------------------------------------------------------------------
+      # 5. Assemble payload/
+      # ----------------------------------------------------------------------
+      - name: Assemble installer payload
+        shell: pwsh
+        run: |
+          $payload = "packaging\payload"
+          New-Item -ItemType Directory -Force -Path $payload | Out-Null
+
+          # Flutter app
+          Copy-Item "app\build\windows\x64\runner\Release\*" -Destination "$payload\app" -Recurse -Force
+
+          # Backend source (exclude __pycache__, venv, .env)
+          robocopy backend "$payload\backend" /E /XD __pycache__ venv .venv /XF .env | Out-Null
+          if ($LASTEXITCODE -ge 8) { throw "robocopy backend failed: $LASTEXITCODE" }
+
+          # Embedded Python
+          Copy-Item "python-embed\*" -Destination "$payload\python" -Recurse -Force
+
+          # Postgres
+          Copy-Item "pgsql-extract\pgsql\*" -Destination "$payload\pgsql" -Recurse -Force
+
+          # NSSM (win64)
+          New-Item -ItemType Directory -Force -Path "$payload\tools" | Out-Null
+          Copy-Item "nssm-extract\nssm-$env:NSSM_VERSION\win64\nssm.exe" -Destination "$payload\tools\nssm.exe" -Force
+
+          # Helper scripts
+          Copy-Item "packaging\windows\scripts\*" -Destination "$payload\scripts" -Recurse -Force
+
+          Write-Host "Payload assembled:"
+          Get-ChildItem $payload | Format-Table Name, @{Name='Size(MB)';Expression={[math]::Round((Get-ChildItem $_.FullName -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)}}
+
+      # ----------------------------------------------------------------------
+      # 6. Compile installer with Inno Setup (preinstalled on windows-latest)
+      # ----------------------------------------------------------------------
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "Inno Setup not found at $iscc" }
+          & $iscc "packaging\windows\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
+
+      - name: Find output installer
+        id: find
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "packaging\output" -Filter "SPBilling-Setup-*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer not produced" }
+          echo "installer=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          echo "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          $sizeMB = [math]::Round($exe.Length / 1MB, 1)
+          Write-Host "Built: $($exe.Name) ($sizeMB MB)"
+
+      # ----------------------------------------------------------------------
+      # 7. Upload artifact
+      # ----------------------------------------------------------------------
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spbilling-windows-installer
+          path: packaging/output/SPBilling-Setup-*.exe
+          retention-days: 14
+          if-no-files-found: error

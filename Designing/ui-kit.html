@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-density="comfortable" data-brand="teal">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>S. P. Gas Agency — UI Kit & Component Dictionary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { background: var(--bg); }
+  .kit-wrap { max-width: 1200px; margin: 0 auto; padding: 32px 40px 80px; }
+  .kit-head { display:flex; align-items:center; gap:16px; margin-bottom: 8px; }
+  .kit-head .logo { width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--brand-600),var(--brand-800));color:#fff;display:grid;place-items:center;font-weight:800;letter-spacing:-.02em; }
+  .kit-head h1 { margin:0; font-size:28px; letter-spacing:-0.02em; }
+  .kit-head p { margin:4px 0 0; color: var(--text-2); font-size: 14px; }
+  .kit-nav { position: sticky; top: 0; background: var(--bg); padding: 12px 0; z-index: 10; border-bottom: 1px solid var(--border); margin: 24px 0 32px; display:flex; gap:6px; flex-wrap:wrap; }
+  .kit-nav a { padding: 6px 12px; border-radius: 999px; font-size:12px; color: var(--text-2); text-decoration:none; border:1px solid var(--border); background: var(--surface); font-weight:600; }
+  .kit-nav a:hover { color: var(--brand-700); border-color: var(--brand-500); }
+  .sec { margin: 56px 0; scroll-margin-top: 70px; }
+  .sec h2 { margin: 0 0 4px; font-size: 22px; letter-spacing:-0.01em; }
+  .sec .lead { color: var(--text-2); margin: 0 0 20px; font-size: 14px; max-width: 780px; }
+  .sub-h { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); margin: 24px 0 10px; }
+  .example { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+  .example .demo { padding: 24px; border-bottom: 1px solid var(--divider); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .example .demo.stack { flex-direction: column; align-items: stretch; }
+  .example .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .example .meta > div { padding: 14px 18px; font-size: 12px; color: var(--text-2); line-height: 1.6; }
+  .example .meta > div + div { border-left: 1px solid var(--divider); }
+  .example .meta b { color: var(--text); font-weight: 600; display: block; font-size: 11px; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 4px; }
+  code.tok, kbd.tok { font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .sw { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+  .sw .chip { height: 56px; }
+  .sw .lbl { padding: 8px 12px; font-size: 12px; }
+  .sw .lbl .n { font-weight: 600; }
+  .sw .lbl .h { font-family: var(--font-mono); color: var(--text-2); font-size: 11px; }
+  .type-row { display: flex; align-items: baseline; gap: 24px; padding: 14px 18px; border-bottom: 1px solid var(--divider); }
+  .type-row:last-child { border: 0; }
+  .type-row .spec { width: 140px; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+  .type-row .sample { flex: 1; color: var(--text); }
+  .dict-tbl { width:100%; border-collapse: collapse; font-size: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .dict-tbl th, .dict-tbl td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+  .dict-tbl th { background: var(--surface-2); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); font-weight: 700; }
+  .dict-tbl code { font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; }
+  .rad-row { display: flex; gap: 16px; align-items: flex-end; }
+  .rad-row .box { width: 80px; height: 80px; background: var(--surface-2); border: 1px solid var(--border-strong); }
+  .rad-row .box .lbl { padding: 4px 6px; font-size: 10px; font-family: var(--font-mono); color: var(--text-2); }
+  .sp-row { display: flex; align-items: flex-end; gap: 4px; }
+  .sp-row .sp { background: var(--brand-200); }
+  .sp-row .sp .lbl { display: block; font-size: 10px; font-family: var(--font-mono); color: var(--text-2); text-align: center; margin-top: 4px; }
+  .princ { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .princ .p { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .princ .p .ic { width: 32px; height: 32px; border-radius: 8px; background: var(--brand-50); color: var(--brand-700); display: grid; place-items: center; margin-bottom: 10px; }
+  .princ .p h4 { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
+  .princ .p p { margin: 0; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+  .do-dont { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .do-dont .col { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .do-dont h5 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing:.06em; font-weight: 700; }
+  .do-dont .do h5 { color: var(--ok-700); }
+  .do-dont .dont h5 { color: var(--err-700); }
+  .do-dont li { font-size: 12px; color: var(--text-2); padding: 3px 0; list-style: none; padding-left: 18px; position: relative; }
+  .do-dont .do li::before { content:'✓'; color: var(--ok-600); position:absolute; left:0; font-weight:700; }
+  .do-dont .dont li::before { content:'✕'; color: var(--err-600); position:absolute; left:0; font-weight:700; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="src/icons.jsx"></script>
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/ui.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+
+const ModalDemo = () => {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button className="btn secondary" onClick={()=>setOpen(true)}>Open modal</button>
+    {open && <Modal title="Delete customer?" onClose={()=>setOpen(false)}
+      footer={<><button className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button><button className="btn danger" onClick={()=>setOpen(false)}>Delete</button></>}>
+      <p style={{margin:0, color:'var(--text-2)', fontSize:14}}>This will permanently delete <b>Manoj Patel</b> and all associated transactions. This action cannot be undone.</p>
+    </Modal>}
+  </>;
+};
+
+const DrawerDemo = () => {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button className="btn secondary" onClick={()=>setOpen(true)}>Open drawer</button>
+    {open && <Drawer onClose={()=>setOpen(false)} width={440}>
+      <div className="cd-hero">
+        <div className="avatar">MP</div>
+        <div style={{flex:1}}>
+          <div className="n">Manoj Patel</div>
+          <div className="m">Ranasan · 98765 43210</div>
+        </div>
+        <div className="right"><button className="btn secondary sm" onClick={()=>setOpen(false)}><Icon name="x" size={14}/></button></div>
+      </div>
+      <div className="cd-cards">
+        <div className="cd-card warn"><div className="k">Total Due</div><div className="v">₹340</div></div>
+        <div className="cd-card"><div className="k">Empty</div><div className="v">2</div></div>
+        <div className="cd-card ok"><div className="k">Lifetime</div><div className="v">₹18,400</div></div>
+      </div>
+      <div className="empty" style={{flex:1}}><div className="glyph"><Icon name="doc" size={24}/></div><div>Transactions appear here</div></div>
+    </Drawer>}
+  </>;
+};
+
+const ToastDemo = () => {
+  const toast = useToast();
+  return <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+    <button className="btn secondary" onClick={()=>toast.push({kind:'ok', title:'Bill saved', msg:'#2448 · ₹4,382 · Manoj Patel'})}>Success toast</button>
+    <button className="btn secondary" onClick={()=>toast.push({kind:'err', title:'Save failed', msg:'Check your connection and retry'})}>Error toast</button>
+    <button className="btn secondary" onClick={()=>toast.push({kind:'warn', title:'Partial payment', msg:'Balance ₹1,200 added to dues'})}>Warn toast</button>
+  </div>;
+};
+
+const CustSearchDemo = () => {
+  const [q, setQ] = useState('man');
+  const matches = SEED_CUSTOMERS.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.village.toLowerCase().includes(q.toLowerCase())).slice(0, 4);
+  return <div style={{width:'100%', maxWidth:520, position:'relative'}}>
+    <div className="input-with-icon">
+      <span className="ii"><Icon name="search" size={16}/></span>
+      <input className="input" value={q} onChange={e=>setQ(e.target.value)}/>
+    </div>
+    <div style={{position:'relative'}}>
+      <div className="cust-dropdown" style={{position:'relative', top:4}}>
+        {matches.map((c, i) => (
+          <div key={c.id} className={`cust-opt ${i===0?'focused':''}`}>
+            <div className="avatar">{initials(c.name)}</div>
+            <div>
+              <div className="n">{highlight(c.name, q)} — {highlight(c.village, q)}</div>
+              <div className="s">{c.mobile} · {c.type}</div>
+            </div>
+            <div className="meta">
+              {c.due > 0 ? <div style={{color:'var(--err-600)', fontWeight:600}}>{fmtINR(c.due)} due</div> : <div className="muted">No dues</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>;
+};
+
+const Section = ({ id, title, lead, children }) => (
+  <section className="sec" id={id}>
+    <h2>{title}</h2>
+    {lead && <p className="lead">{lead}</p>}
+    {children}
+  </section>
+);
+
+const Ex = ({ title, purpose, usage, children }) => (
+  <div className="example">
+    <div className="demo">{children}</div>
+    <div className="meta">
+      <div><b>Purpose</b>{purpose}</div>
+      <div><b>When to use</b>{usage}</div>
+    </div>
+  </div>
+);
+
+const UIKit = () => (
+  <div className="kit-wrap">
+    <div className="kit-head">
+      <div className="logo">SP</div>
+      <div>
+        <h1>UI Kit &amp; Component Dictionary</h1>
+        <p>S. P. Gas Agency — Billing App · v1.0 · Use these patterns exactly, don't reinvent them.</p>
+      </div>
+      <div style={{marginLeft:'auto'}}>
+        <a href="app.html" className="btn secondary">← Back to prototype</a>
+      </div>
+    </div>
+
+    <nav className="kit-nav">
+      <a href="#principles">Principles</a>
+      <a href="#color">Color</a>
+      <a href="#type">Typography</a>
+      <a href="#spacing">Spacing</a>
+      <a href="#radius">Radius &amp; Shadow</a>
+      <a href="#icons">Icons</a>
+      <a href="#buttons">Buttons</a>
+      <a href="#inputs">Inputs</a>
+      <a href="#selectors">Selectors</a>
+      <a href="#badges">Badges</a>
+      <a href="#cards">Cards</a>
+      <a href="#tables">Tables</a>
+      <a href="#empty">Empty &amp; Loading</a>
+      <a href="#overlays">Overlays</a>
+      <a href="#feedback">Feedback</a>
+      <a href="#nav">Navigation</a>
+      <a href="#domain">Domain Components</a>
+      <a href="#dictionary">Full Dictionary</a>
+    </nav>
+
+    {/* ========== PRINCIPLES ========== */}
+    <Section id="principles" title="Design Principles" lead="Every decision should ladder up to one of these. When principles conflict, speed wins.">
+      <div className="princ">
+        <div className="p"><div className="ic"><Icon name="clock" size={16}/></div><h4>Speed over Style</h4><p>Staff make 100+ bills a day. Every click, every extra character of typing, is cost.</p></div>
+        <div className="p"><div className="ic"><Icon name="gear" size={16}/></div><h4>Keyboard First</h4><p>Desktop users must be able to create a bill without touching the mouse. Tab order matters.</p></div>
+        <div className="p"><div className="ic"><Icon name="eye" size={16}/></div><h4>Clarity</h4><p>Numbers, names, statuses — instantly readable. Tabular numerals. High contrast.</p></div>
+        <div className="p"><div className="ic"><Icon name="save" size={16}/></div><h4>Forgiving</h4><p>Auto-save drafts. Confirm destructive actions. Undo where possible.</p></div>
+        <div className="p"><div className="ic"><Icon name="home" size={16}/></div><h4>Familiar</h4><p>Feels like Tally / Busy but modern. No retraining needed.</p></div>
+        <div className="p"><div className="ic"><Icon name="rupee" size={16}/></div><h4>Regional Comfort</h4><p>Rupee symbol everywhere. Indian lakh-crore grouping. Date format DD-MMM-YYYY.</p></div>
+      </div>
+    </Section>
+
+    {/* ========== COLOR ========== */}
+    <Section id="color" title="Color" lead="Seven brand palettes — use the active one from CSS variables, never hardcode. Semantic colors are fixed across all brands.">
+      <div className="sub-h">Brand (active: teal)</div>
+      <div className="swatch-grid">
+        {[['50','#f0fdfa'],['100','#ccfbf1'],['200','#99f6e4'],['500','#14b8a6'],['600','#0d9488'],['700','#0f766e'],['800','#115e59'],['900','#134e4a']].map(([k,v]) => (
+          <div className="sw" key={k}><div className="chip" style={{background:v}}/><div className="lbl"><div className="n">brand-{k}</div><div className="h">{v}</div></div></div>
+        ))}
+      </div>
+
+      <div className="sub-h">Semantic</div>
+      <div className="swatch-grid">
+        <div className="sw"><div className="chip" style={{background:'#10b981'}}/><div className="lbl"><div className="n">ok-500</div><div className="h">Success · Paid</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#f59e0b'}}/><div className="lbl"><div className="n">warn-500</div><div className="h">Pending · Partial</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#ef4444'}}/><div className="lbl"><div className="n">err-500</div><div className="h">Overdue · Error</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#0891b2'}}/><div className="lbl"><div className="n">info-500</div><div className="h">Informational</div></div></div>
+      </div>
+
+      <div className="sub-h">Neutrals</div>
+      <div className="swatch-grid">
+        <div className="sw"><div className="chip" style={{background:'#f7f8fb', border:'1px solid var(--border)'}}/><div className="lbl"><div className="n">bg</div><div className="h">#f7f8fb</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#ffffff', border:'1px solid var(--border)'}}/><div className="lbl"><div className="n">surface</div><div className="h">#ffffff</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#e4e7ee'}}/><div className="lbl"><div className="n">border</div><div className="h">#e4e7ee</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#0f172a'}}/><div className="lbl"><div className="n">text</div><div className="h">#0f172a</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#475569'}}/><div className="lbl"><div className="n">text-2</div><div className="h">#475569</div></div></div>
+        <div className="sw"><div className="chip" style={{background:'#94a3b8'}}/><div className="lbl"><div className="n">text-3</div><div className="h">#94a3b8</div></div></div>
+      </div>
+    </Section>
+
+    {/* ========== TYPE ========== */}
+    <Section id="type" title="Typography" lead="Inter for UI text, JetBrains Mono for numbers and codes. Always use tabular-nums for amounts.">
+      <div className="example">
+        <div className="type-row"><div className="spec">Page Title · 24/32 · 700</div><div className="sample" style={{fontSize:24,fontWeight:700,lineHeight:'32px',letterSpacing:'-0.01em'}}>New Bill</div></div>
+        <div className="type-row"><div className="spec">Section · 18/24 · 600</div><div className="sample" style={{fontSize:18,fontWeight:600,lineHeight:'24px'}}>Customer</div></div>
+        <div className="type-row"><div className="spec">Subhead · 16/22 · 600</div><div className="sample" style={{fontSize:16,fontWeight:600}}>Empty Bottles After This Bill</div></div>
+        <div className="type-row"><div className="spec">Body · 14/20 · 400</div><div className="sample" style={{fontSize:14}}>Search by mobile or name to find a customer.</div></div>
+        <div className="type-row"><div className="spec">Small · 12/16 · 400</div><div className="sample" style={{fontSize:12, color:'var(--text-2)'}}>Auto-saved as draft · 2 minutes ago</div></div>
+        <div className="type-row"><div className="spec">Number · 28 · 700 tabular</div><div className="sample num" style={{fontSize:28,fontWeight:700,letterSpacing:'-0.02em'}}>₹48,920</div></div>
+        <div className="type-row"><div className="spec">Mono · 12 · tabular</div><div className="sample mono" style={{fontSize:12}}>SPG-2448 · 24AAUFS0029D1ZD</div></div>
+      </div>
+      <div className="sub-h">Token reference</div>
+      <table className="dict-tbl">
+        <thead><tr><th>Token</th><th>CSS Variable</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Page title</td><td><code>--fs-h1</code></td><td>24px / 700</td></tr>
+          <tr><td>Section</td><td><code>--fs-h2</code></td><td>18px / 600</td></tr>
+          <tr><td>Body</td><td><code>--fs-body</code></td><td>14px / 400</td></tr>
+          <tr><td>Small</td><td><code>--fs-sm</code></td><td>12px / 400</td></tr>
+          <tr><td>Mono</td><td><code>--font-mono</code></td><td>JetBrains Mono</td></tr>
+        </tbody>
+      </table>
+    </Section>
+
+    {/* ========== SPACING ========== */}
+    <Section id="spacing" title="Spacing Scale" lead="8px base. Use the scale, don't invent values.">
+      <div className="example" style={{padding:24}}>
+        <div className="sp-row">
+          {[4,8,12,16,20,24,32,40,48,64].map(n=>(
+            <div key={n} className="sp" style={{width:n, height:40}}>
+              <span className="lbl">{n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Section>
+
+    {/* ========== RADIUS ========== */}
+    <Section id="radius" title="Radius &amp; Shadow" lead="Radius scale by role: inputs/buttons small, cards medium, modals large, badges full.">
+      <div className="sub-h">Radius</div>
+      <div className="example" style={{padding:24}}>
+        <div className="rad-row">
+          {[['xs',4],['sm',6],['md',10],['lg',12],['full',40]].map(([k,v])=>(
+            <div key={k} style={{textAlign:'center'}}>
+              <div className="box" style={{borderRadius:v}}><div className="lbl">--r-{k}</div></div>
+              <div style={{fontSize:11, color:'var(--text-2)', marginTop:6}}>{v === 40 ? '999px' : v+'px'}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="sub-h">Elevation</div>
+      <div className="example" style={{padding:24, background:'var(--bg)'}}>
+        <div style={{display:'flex', gap:24, flexWrap:'wrap'}}>
+          {[['sm','Cards'],['md','Popovers'],['lg','Modals'],['xl','Dialogs']].map(([k,use])=>(
+            <div key={k} style={{width:140, height:90, background:'var(--surface)', borderRadius:10, boxShadow:`var(--sh-${k})`, display:'grid', placeItems:'center', textAlign:'center'}}>
+              <div><div style={{fontFamily:'var(--font-mono)', fontSize:11}}>--sh-{k}</div><div style={{fontSize:11, color:'var(--text-2)', marginTop:4}}>{use}</div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Section>
+
+    {/* ========== ICONS ========== */}
+    <Section id="icons" title="Icons" lead="Custom Lucide-style set. 2px stroke, outlined. 16px inline, 20px in buttons, 24px in navigation.">
+      <div className="example" style={{padding:20}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(110px, 1fr))', gap:4}}>
+          {['dashboard','users','user','cylinder','doc','plus','pluscircle','rupee','chart','gear','search','bell','x','check','chevright','chevleft','chevdown','chevup','phone','message','edit','trash','printer','download','upload','eye','eyeoff','calendar','filter','menu','more','wifi','cash','card','upi','cheque','credit','home','alert','arrowup','arrowdown','save','palette','box','clock'].map(n=>(
+            <div key={n} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:6, padding:'10px 6px', borderRadius:6}}>
+              <div style={{color:'var(--text)'}}><Icon name={n} size={20}/></div>
+              <div style={{fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text-2)'}}>{n}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="sub-h">Usage</div>
+      <p style={{fontSize:13, color:'var(--text-2)'}}>Use <code className="tok">&lt;Icon name="plus" size={16} /&gt;</code>. Stroke inherits <code className="tok">currentColor</code>.</p>
+    </Section>
+
+    {/* ========== BUTTONS ========== */}
+    <Section id="buttons" title="Buttons" lead="Five variants, three sizes. Always pair primary action with a secondary or ghost escape route.">
+      <Ex purpose="Primary action — the single most important thing to do on a screen."
+          usage="Save, Submit, Confirm. Only one primary per surface.">
+        <button className="btn primary"><Icon name="check" size={14}/> Save Bill</button>
+        <button className="btn primary lg"><Icon name="plus" size={16}/> New Bill</button>
+        <button className="btn primary sm">Add</button>
+      </Ex>
+      <Ex purpose="Secondary — supporting action, same visual weight priority as primary."
+          usage="Cancel, Back, alternate save (Save Draft). Paired with primary.">
+        <button className="btn secondary">Save Draft</button>
+        <button className="btn secondary"><Icon name="download" size={14}/> Export</button>
+        <button className="btn secondary sm"><Icon name="printer" size={14}/> Print</button>
+      </Ex>
+      <Ex purpose="Ghost — low-emphasis tertiary. Blends into surface."
+          usage="View all links, Cancel on neutral surfaces, inline toggles.">
+        <button className="btn ghost">Cancel</button>
+        <button className="btn ghost sm">View all <Icon name="chevright" size={12}/></button>
+      </Ex>
+      <Ex purpose="Danger — destructive actions that can't be undone easily."
+          usage="Delete customer, Cancel bill, Clear data. Always with confirmation modal.">
+        <button className="btn danger"><Icon name="trash" size={14}/> Delete Customer</button>
+      </Ex>
+      <Ex purpose="Icon button — compact action, no label."
+          usage="Inside tables (more menu, delete row), toolbars. Always add title/aria-label.">
+        <button className="icon-btn-s"><Icon name="more" size={14}/></button>
+        <button className="icon-btn-s"><Icon name="edit" size={14}/></button>
+        <button className="icon-btn-s"><Icon name="trash" size={14}/></button>
+      </Ex>
+      <div className="sub-h">API</div>
+      <table className="dict-tbl">
+        <thead><tr><th>Class</th><th>Variant</th><th>Height (comfortable)</th><th>Height (compact)</th></tr></thead>
+        <tbody>
+          <tr><td><code>.btn.primary</code></td><td>Primary</td><td>36px</td><td>32px</td></tr>
+          <tr><td><code>.btn.secondary</code></td><td>Secondary</td><td>36px</td><td>32px</td></tr>
+          <tr><td><code>.btn.ghost</code></td><td>Ghost</td><td>36px</td><td>32px</td></tr>
+          <tr><td><code>.btn.danger</code></td><td>Danger</td><td>36px</td><td>32px</td></tr>
+          <tr><td><code>.btn.sm / .lg</code></td><td>Size modifiers</td><td>30 / 44px</td><td>28 / 40px</td></tr>
+          <tr><td><code>.btn.block</code></td><td>Full-width modifier</td><td>—</td><td>—</td></tr>
+          <tr><td><code>.icon-btn-s</code></td><td>Compact icon-only</td><td>30×30</td><td>30×30</td></tr>
+        </tbody>
+      </table>
+    </Section>
+
+    {/* ========== INPUTS ========== */}
+    <Section id="inputs" title="Inputs" lead="Label above, field, optional help below. Error replaces help. Required fields show red asterisk.">
+      <Ex purpose="Text input — single-line free-form data."
+          usage="Names, addresses, free text. Always paired with a <Field> label wrapper.">
+        <div style={{width:280}}>
+          <Field label="Customer Name" required><input className="input" defaultValue="Manoj Patel"/></Field>
+        </div>
+        <div style={{width:200}}>
+          <Field label="Mobile" required help="10 digits"><input className="input" defaultValue="98765 43210"/></Field>
+        </div>
+      </Ex>
+      <Ex purpose="Input with leading icon — visual affordance for what kind of data."
+          usage="Search, currency, phone, email, date.">
+        <div style={{width:280}}>
+          <Field label="Search">
+            <div className="input-with-icon"><span className="ii"><Icon name="search" size={16}/></span><input className="input" placeholder="Bill #, customer…"/></div>
+          </Field>
+        </div>
+        <div style={{width:180}}>
+          <Field label="Amount">
+            <div className="input-with-icon"><span className="ii" style={{fontWeight:700}}>₹</span><input className="input num" defaultValue="4382"/></div>
+          </Field>
+        </div>
+      </Ex>
+      <Ex purpose="Error state — red border, red help text, keeps layout height."
+          usage="Validation errors. Don't show until user leaves field.">
+        <div style={{width:280}}>
+          <Field label="Mobile" required error="Enter a valid 10-digit mobile number"><input className="input" defaultValue="98765"/></Field>
+        </div>
+      </Ex>
+      <Ex purpose="Textarea — multi-line free-form."
+          usage="Address, notes, descriptions. 3+ lines.">
+        <div style={{width:360}}>
+          <Field label="Full Address"><textarea defaultValue="Nr. Hathmati Bridge, Ider Highway Road, Himatnagar - 383001"/></Field>
+        </div>
+      </Ex>
+      <Ex purpose="Select — one-of-many from a closed list."
+          usage="Type, mode, enum values. Prefer Segmented for 2-4 options.">
+        <div style={{width:220}}>
+          <Field label="Customer Type"><select className="select"><option>Domestic</option><option>Commercial</option></select></Field>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== SELECTORS ========== */}
+    <Section id="selectors" title="Selectors" lead="Checkbox, radio, segmented, payment-mode cards. Pick the right density for the choice count.">
+      <Ex purpose="Checkbox — independent on/off choices."
+          usage="Bulk-select rows, feature toggles, multi-select filters.">
+        <label className="checkbox"><input type="checkbox" defaultChecked/><span className="box"/>Remember me</label>
+        <label className="checkbox"><input type="checkbox"/><span className="box"/>Auto-backup every 30 minutes</label>
+      </Ex>
+      <Ex purpose="Radio — mutually exclusive choice within a group."
+          usage="Customer Type (Domestic/Commercial). Use when choices need to all be visible.">
+        <label className="radio"><input type="radio" name="rt" defaultChecked/><span className="box"/>Domestic</label>
+        <label className="radio"><input type="radio" name="rt"/><span className="box"/>Commercial</label>
+      </Ex>
+      <Ex purpose="Segmented — 2-5 mutually exclusive choices, emphasised tab-like."
+          usage="Date ranges (Today/Week/Month), density, theme toggles.">
+        <Segmented options={[{value:'today',label:'Today'},{value:'week',label:'This Week'},{value:'month',label:'This Month'}]} value="today" onChange={()=>{}}/>
+      </Ex>
+      <Ex purpose="Payment-mode cards — icon + label, high visual weight."
+          usage="Billing payment selection. 5 modes always visible.">
+        <div className="pay-modes" style={{width:'100%', maxWidth:600}}>
+          <div className="pay-mode on"><Icon name="cash" size={16}/> Cash</div>
+          <div className="pay-mode"><Icon name="upi" size={16}/> UPI</div>
+          <div className="pay-mode"><Icon name="card" size={16}/> Card</div>
+          <div className="pay-mode"><Icon name="cheque" size={16}/> Cheque</div>
+          <div className="pay-mode"><Icon name="credit" size={16}/> Credit</div>
+        </div>
+      </Ex>
+      <Ex purpose="Filter chip — quick toggle of predefined filters."
+          usage="List/table filter bars. Selected state uses brand color.">
+        <div className="filter-chip on">All (20)</div>
+        <div className="filter-chip">With dues</div>
+        <div className="filter-chip">Empty pending</div>
+        <div className="filter-chip">Domestic</div>
+      </Ex>
+    </Section>
+
+    {/* ========== BADGES ========== */}
+    <Section id="badges" title="Badges" lead="Status indicators. Color carries meaning — always pair with text, never rely on color alone.">
+      <Ex purpose="Status — convey a clear one-word state."
+          usage="Paid/Unpaid/Partial, Active/Inactive, counts in list headers.">
+        <span className="badge ok">Paid</span>
+        <span className="badge warn">Partial</span>
+        <span className="badge err">Unpaid</span>
+        <span className="badge brand">Commercial</span>
+        <span className="badge muted">Inactive</span>
+        <span className="badge muted">247 customers</span>
+      </Ex>
+      <table className="dict-tbl">
+        <thead><tr><th>Class</th><th>Meaning</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td><code>.badge.ok</code></td><td>Positive / completed</td><td>Paid, Active, Success</td></tr>
+          <tr><td><code>.badge.warn</code></td><td>Attention / in-progress</td><td>Partial, Due, Empty pending</td></tr>
+          <tr><td><code>.badge.err</code></td><td>Negative / overdue</td><td>Unpaid, Overdue, Low stock</td></tr>
+          <tr><td><code>.badge.brand</code></td><td>Category / highlight</td><td>Commercial, New, Default</td></tr>
+          <tr><td><code>.badge.muted</code></td><td>Neutral / count</td><td>Inactive, counts, tags</td></tr>
+        </tbody>
+      </table>
+    </Section>
+
+    {/* ========== CARDS ========== */}
+    <Section id="cards" title="Cards" lead="Container for grouped content. Standard card has header + body, stat card is denser.">
+      <Ex purpose="Standard card — grouped content with optional header actions."
+          usage="List containers, settings sections, dashboard tiles with content.">
+        <div className="card" style={{width:360}}>
+          <div className="card-h">
+            <h3>Recent bills</h3>
+            <div className="right"><button className="btn ghost sm">View all <Icon name="chevright" size={12}/></button></div>
+          </div>
+          <div className="card-b" style={{fontSize:13, color:'var(--text-2)'}}>Card body content goes here.</div>
+        </div>
+      </Ex>
+      <Ex purpose="Stat card — big number + label + trend delta."
+          usage="Dashboard KPIs. Max 4 in a row. Accent variant for the hero metric.">
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, width:'100%', maxWidth:500}}>
+          <div className="stat accent">
+            <div className="lbl"><span className="ic"><Icon name="rupee" size={14}/></span>Today's Sales</div>
+            <div className="val">₹48,920</div>
+            <div className="sub">34 bills <span className="delta up"><Icon name="arrowup" size={10}/>12%</span></div>
+          </div>
+          <div className="stat">
+            <div className="lbl"><span className="ic"><Icon name="cylinder" size={14}/></span>Cylinders Sold</div>
+            <div className="val num">52</div>
+            <div className="sub">27 refill · 25 new</div>
+          </div>
+        </div>
+      </Ex>
+      <Ex purpose="Quick action card — icon + title + one-liner."
+          usage="Dashboard shortcut row. Clickable, hover highlights border in brand color.">
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, width:'100%', maxWidth:500}}>
+          <div className="qa-btn">
+            <div className="ic"><Icon name="plus" size={18}/></div>
+            <div><div className="t">New Bill</div><div className="s">Create & print</div></div>
+          </div>
+          <div className="qa-btn">
+            <div className="ic"><Icon name="users" size={18}/></div>
+            <div><div className="t">Add Customer</div><div className="s">New account</div></div>
+          </div>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== TABLES ========== */}
+    <Section id="tables" title="Tables" lead="Dense, tabular, sortable. Sticky header, zebra optional, right-align all numbers. Tabular-nums for amounts.">
+      <Ex purpose="Data table — sort, filter, row actions, bulk select."
+          usage="Customer list, bills list, products. Max ~30 rows per page; paginate beyond.">
+        <div style={{width:'100%'}}>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr>
+                <th className="chk"><label className="checkbox"><input type="checkbox"/><span className="box"/></label></th>
+                <th>Bill #</th><th>Customer</th><th>Mode</th>
+                <th className="num">Total</th><th>Status</th>
+              </tr></thead>
+              <tbody>
+                <tr className="clickable">
+                  <td className="chk"><label className="checkbox"><input type="checkbox" defaultChecked/><span className="box"/></label></td>
+                  <td className="mono">#2447</td>
+                  <td><div style={{fontWeight:600}}>Manoj Patel</div><div className="sub">Ranasan</div></td>
+                  <td><span className="badge muted">Cash</span></td>
+                  <td className="num" style={{fontWeight:600}}>₹4,382</td>
+                  <td><span className="badge ok">Paid</span></td>
+                </tr>
+                <tr className="clickable">
+                  <td className="chk"><label className="checkbox"><input type="checkbox"/><span className="box"/></label></td>
+                  <td className="mono">#2446</td>
+                  <td><div style={{fontWeight:600}}>Anil Desai</div><div className="sub">Himatnagar</div></td>
+                  <td><span className="badge warn">Credit</span></td>
+                  <td className="num" style={{fontWeight:600}}>₹8,100</td>
+                  <td><span className="badge err">Unpaid</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== EMPTY / LOADING ========== */}
+    <Section id="empty" title="Empty &amp; Loading States" lead="Always design for 'nothing to show' and 'still loading' — don't just show blank space.">
+      <Ex purpose="Empty state — nothing here yet. Include a path forward."
+          usage="New accounts with no data, filtered lists with zero matches.">
+        <div className="empty" style={{minWidth:320}}>
+          <div className="glyph"><Icon name="users" size={24}/></div>
+          <div style={{fontWeight:600, fontSize:14, color:'var(--text)'}}>No customers yet</div>
+          <div className="small" style={{color:'var(--text-2)'}}>Add your first customer to start billing.</div>
+          <button className="btn primary mt-12"><Icon name="plus" size={14}/> Add Your First Customer</button>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== OVERLAYS ========== */}
+    <Section id="overlays" title="Overlays — Modals &amp; Drawers" lead="Modal for focused tasks, drawer for detail views alongside context.">
+      <Ex purpose="Modal — focused task that blocks the rest of the UI."
+          usage="Add/Edit forms, confirmations, multi-step wizards. Escape closes.">
+        <ModalDemo/>
+      </Ex>
+      <Ex purpose="Drawer — detail view of a selected item, keeps list visible behind."
+          usage="Customer detail/ledger, product variants, notification panel.">
+        <DrawerDemo/>
+      </Ex>
+    </Section>
+
+    {/* ========== FEEDBACK ========== */}
+    <Section id="feedback" title="Feedback — Toasts &amp; Banners" lead="Toasts for transient confirmations. Banners for persistent contextual warnings.">
+      <Ex purpose="Toast — short-lived confirmation, auto-dismisses after 4s."
+          usage="Save success, errors, background job complete. Top-right stack.">
+        <ToastDemo/>
+      </Ex>
+      <Ex purpose="Inline warning banner — contextual, persists until fixed."
+          usage="Data sanity issues (e.g. returned > owed), partial payment hints.">
+        <div style={{padding:'10px 14px', background:'var(--warn-50)', border:'1px solid var(--warn-100)', borderRadius:10, color:'var(--warn-700)', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:8}}>
+          <Icon name="alert" size={16}/> Empty bottles returned (4) exceeds total owed (3).
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== NAV ========== */}
+    <Section id="nav" title="Navigation" lead="Sidebar for desktop primary nav, topbar for global actions, status bar for system info.">
+      <Ex purpose="Sidebar nav item — active indicator on left, optional count on right."
+          usage="Primary navigation. Always shown in full or icon-only mode.">
+        <div style={{width:220, background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:8}}>
+          <div className="nav-item active"><Icon name="dashboard" size={16}/> <span className="label">Dashboard</span></div>
+          <div className="nav-item"><Icon name="users" size={16}/> <span className="label">Customers</span><span className="count">247</span></div>
+          <div className="nav-item"><Icon name="doc" size={16}/> <span className="label">Bills</span><span className="count">842</span></div>
+        </div>
+      </Ex>
+      <Ex purpose="Tabs — switch between related views within a screen."
+          usage="Customer detail tabs (Transactions/Payments/Empties), Settings sections.">
+        <div style={{background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'0 16px', width:'100%', maxWidth:500}}>
+          <div className="tabs" style={{padding:0}}>
+            <div className="tab on">Transactions</div>
+            <div className="tab">Payments</div>
+            <div className="tab">Empty History</div>
+            <div className="tab">Notes</div>
+          </div>
+        </div>
+      </Ex>
+      <Ex purpose="Pagination — page navigation for long tables."
+          usage="Any table with more than 25 rows. Show range + total.">
+        <div style={{display:'flex', gap:4, alignItems:'center'}}>
+          <button className="btn secondary sm" disabled><Icon name="chevleft" size={14}/></button>
+          <div style={{padding:'0 10px', fontSize:13, color:'var(--text-2)'}}>Page 1 of 51</div>
+          <button className="btn secondary sm"><Icon name="chevright" size={14}/></button>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== DOMAIN ========== */}
+    <Section id="domain" title="Domain Components" lead="Composite patterns specific to billing. Use these verbatim — they encode domain rules.">
+      <Ex purpose="Customer autocomplete — search by name, village, mobile. Dropdown shows all three."
+          usage="New Bill customer field. Keyboard navigable (↑↓ to move, Enter to pick).">
+        <CustSearchDemo/>
+      </Ex>
+      <Ex purpose="Selected customer card — shows name, mobile, type, previous dues, empty bottles."
+          usage="Above the items table once a customer is picked. Always visible during bill creation.">
+        <div style={{width:'100%', maxWidth:700}}>
+          <div className="cust-selected">
+            <div className="avatar">MP</div>
+            <div>
+              <div className="n">Manoj Patel — Ranasan</div>
+              <div className="m"><Icon name="phone" size={11}/> 98765 43210 · <span className="badge muted">Domestic</span></div>
+            </div>
+            <div className="stats">
+              <div><div className="k">Prev Due</div><div className="v" style={{color:'var(--err-600)'}}>₹340</div></div>
+              <div><div className="k">Empty Pending</div><div className="v" style={{color:'var(--warn-700)'}}>2</div></div>
+            </div>
+          </div>
+        </div>
+      </Ex>
+      <Ex purpose="Items table — in-place product search per row, qty/rate/empty columns, live amount."
+          usage="Billing screen only. Don't use this table pattern elsewhere.">
+        <div style={{width:'100%'}}>
+          <div className="bill-section-b" style={{padding:0, border:'1px solid var(--border)', borderRadius:10}}>
+            <table className="items-tbl">
+              <thead><tr><th style={{width:36, paddingLeft:14}}>#</th><th>Product</th><th className="num" style={{width:80}}>Qty</th><th className="num" style={{width:100}}>Rate</th><th className="num" style={{width:80}}>Empty</th><th className="num" style={{width:110}}>Amount</th><th style={{width:36}}></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td style={{paddingLeft:14, color:'var(--text-3)'}}>1</td>
+                  <td><input className="cell-input text" defaultValue="LPG Cyl Commercial 15kg"/><div style={{fontSize:10, color:'var(--text-3)', paddingLeft:8, marginTop:2}}>LPG Cylinder · GST 5%</div></td>
+                  <td className="num"><input className="cell-input" defaultValue="2"/></td>
+                  <td className="num"><input className="cell-input" defaultValue="1800"/></td>
+                  <td className="num"><input className="cell-input" defaultValue="1"/></td>
+                  <td className="num" style={{fontWeight:700, paddingRight:14}}>₹3,600</td>
+                  <td><button className="rowbtn"><Icon name="trash" size={14}/></button></td>
+                </tr>
+                <tr className="add-row"><td colSpan={7}><button><Icon name="plus" size={14}/> Click to add item</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Ex>
+      <Ex purpose="Bottles calculator — previous + new − returned = owing. Live update."
+          usage="Below items table when cylinder items are present. Warn on inconsistency.">
+        <div className="bottles-calc" style={{width:'100%'}}>
+          <div><span className="lbl">Previous</span><div className="v">2</div></div>
+          <span className="op">+</span>
+          <div><span className="lbl">New</span><div className="v">2</div></div>
+          <span className="op">−</span>
+          <div><span className="lbl">Returned</span><div className="v">1</div></div>
+          <span className="eq">=</span>
+          <div><span className="lbl">Total Owing</span><div className="v total">3</div></div>
+        </div>
+      </Ex>
+      <Ex purpose="Totals summary — subtotal, GST, previous due, grand total, balance."
+          usage="Right sidebar on billing screen. Sticky position recommended.">
+        <div className="totals" style={{width:300}}>
+          <div className="row sub"><span>Subtotal (2 items)</span><span className="v">₹3,850</span></div>
+          <div className="row sub"><span>GST (5%)</span><span className="v">₹192</span></div>
+          <div className="row sub" style={{color:'var(--err-600)'}}><span>Previous Due</span><span className="v">₹340</span></div>
+          <div className="row grand"><span>Grand Total</span><span className="v">₹4,382</span></div>
+          <div className="hline"/>
+          <div className="row sub"><span>Amount Paid</span><span className="v">₹4,382</span></div>
+          <div className="row" style={{fontWeight:700, color:'var(--ok-700)'}}><span>Balance</span><span className="v">₹0</span></div>
+        </div>
+      </Ex>
+      <Ex purpose="Keyboard hint — visible shortcut reminder."
+          usage="Next to primary actions on power-user screens. Don't clutter secondary UI.">
+        <div style={{fontSize:13, color:'var(--text-2)', display:'flex', gap:12, alignItems:'center'}}>
+          <span>Save &amp; Print</span><Kbd k="Ctrl+↵"/>
+          <span style={{marginLeft:16}}>Focus search</span><Kbd k="F4"/>
+          <span style={{marginLeft:16}}>New bill</span><Kbd k="F2"/>
+        </div>
+      </Ex>
+    </Section>
+
+    {/* ========== DICTIONARY ========== */}
+    <Section id="dictionary" title="Component Dictionary" lead="Every component at a glance: what, where, props/classes.">
+      <table className="dict-tbl">
+        <thead><tr><th style={{width:200}}>Name</th><th>Use</th><th>Class / Component</th><th>Where it lives</th></tr></thead>
+        <tbody>
+          <tr><td><b>Button</b></td><td>All user actions</td><td><code>.btn.primary / .secondary / .ghost / .danger</code></td><td>Everywhere</td></tr>
+          <tr><td><b>Icon Button</b></td><td>Compact, no label</td><td><code>.icon-btn-s</code> + <code>Icon</code></td><td>Table rows, toolbars</td></tr>
+          <tr><td><b>Input</b></td><td>Single-line text entry</td><td><code>.input</code></td><td>Forms</td></tr>
+          <tr><td><b>Input + Icon</b></td><td>Search, currency, date</td><td><code>.input-with-icon &gt; .ii + input.input</code></td><td>Forms, toolbars</td></tr>
+          <tr><td><b>Textarea</b></td><td>Multi-line text</td><td><code>textarea</code></td><td>Address, notes</td></tr>
+          <tr><td><b>Select</b></td><td>Enum choice</td><td><code>.select</code></td><td>Forms, filters</td></tr>
+          <tr><td><b>Checkbox</b></td><td>Independent boolean</td><td><code>.checkbox</code></td><td>Bulk select, settings</td></tr>
+          <tr><td><b>Radio</b></td><td>One-of-many, visible</td><td><code>.radio</code></td><td>Customer type, mode</td></tr>
+          <tr><td><b>Segmented</b></td><td>2-5 exclusive tabs</td><td><code>&lt;Segmented/&gt;</code></td><td>Date range, toggles</td></tr>
+          <tr><td><b>Filter Chip</b></td><td>Quick preset filter</td><td><code>.filter-chip .on</code></td><td>List filter bars</td></tr>
+          <tr><td><b>Badge</b></td><td>Status / tag / count</td><td><code>.badge.ok/warn/err/brand/muted</code></td><td>Tables, lists, headers</td></tr>
+          <tr><td><b>Card</b></td><td>Group related content</td><td><code>.card &gt; .card-h + .card-b</code></td><td>Dashboard, settings</td></tr>
+          <tr><td><b>Stat Card</b></td><td>Dashboard KPI</td><td><code>.stat .stat.accent</code></td><td>Dashboard only</td></tr>
+          <tr><td><b>Quick Action</b></td><td>Shortcut tile</td><td><code>.qa-btn</code></td><td>Dashboard</td></tr>
+          <tr><td><b>Data Table</b></td><td>Tabular data</td><td><code>.tbl-wrap &gt; table.tbl</code></td><td>Customers, bills, reports</td></tr>
+          <tr><td><b>Empty State</b></td><td>Zero-data placeholder</td><td><code>.empty &gt; .glyph + text</code></td><td>Any list/table</td></tr>
+          <tr><td><b>Modal</b></td><td>Blocking focused task</td><td><code>&lt;Modal title footer/&gt;</code></td><td>Forms, confirmations</td></tr>
+          <tr><td><b>Drawer</b></td><td>Side detail panel</td><td><code>&lt;Drawer/&gt;</code></td><td>Customer detail, notifications</td></tr>
+          <tr><td><b>Toast</b></td><td>Transient confirmation</td><td><code>toast.push({'{kind,title,msg}'})</code></td><td>Global, top-right</td></tr>
+          <tr><td><b>Tabs</b></td><td>Switch sub-views</td><td><code>.tabs &gt; .tab.on</code></td><td>Customer detail, settings</td></tr>
+          <tr><td><b>Pagination</b></td><td>Navigate pages</td><td><code>.btn.secondary.sm</code> pair</td><td>Below tables</td></tr>
+          <tr><td><b>Sidebar Nav Item</b></td><td>Primary nav link</td><td><code>.nav-item.active</code></td><td>Sidebar</td></tr>
+          <tr><td><b>Top Bar</b></td><td>Global chrome</td><td><code>.topbar</code></td><td>Shell only</td></tr>
+          <tr><td><b>Status Bar</b></td><td>System status</td><td><code>.statusbar</code></td><td>Shell only</td></tr>
+          <tr><td><b>Kbd Hint</b></td><td>Shortcut label</td><td><code>&lt;Kbd k=""/&gt;</code></td><td>Power-user screens</td></tr>
+          <tr><td><b>Customer Search</b></td><td>Autocomplete picker</td><td><code>.cust-search-wrap + .cust-dropdown</code></td><td>New Bill only</td></tr>
+          <tr><td><b>Selected Customer</b></td><td>Active customer summary</td><td><code>.cust-selected</code></td><td>New Bill only</td></tr>
+          <tr><td><b>Items Table</b></td><td>Bill line items</td><td><code>.items-tbl</code></td><td>New Bill only</td></tr>
+          <tr><td><b>Bottles Calc</b></td><td>Empty cyl math</td><td><code>.bottles-calc</code></td><td>New Bill only</td></tr>
+          <tr><td><b>Totals Box</b></td><td>Bill totals summary</td><td><code>.totals</code></td><td>New Bill only</td></tr>
+          <tr><td><b>Payment Mode</b></td><td>Picker card</td><td><code>.pay-modes &gt; .pay-mode.on</code></td><td>New Bill, receipts</td></tr>
+          <tr><td><b>Mini-Bill</b></td><td>9-per-page cell</td><td><code>.a4 &gt; .minibill</code></td><td>Print preview only</td></tr>
+          <tr><td><b>Tweak Panel</b></td><td>Theme controls</td><td><code>.tweak-panel</code></td><td>Global, bottom-right</td></tr>
+        </tbody>
+      </table>
+    </Section>
+
+    {/* ========== DO DON'T ========== */}
+    <Section id="guide" title={"Do & Don\u2019t"} lead="Guardrails — these mistakes come up most often.">
+      <div className="do-dont">
+        <div className="col do">
+          <h5>Do</h5>
+          <ul style={{listStyle:'none', padding:0, margin:0}}>
+            <li>Use tabular-nums on every amount and count</li>
+            <li>Put primary action on the right of a button group</li>
+            <li>Right-align all numeric table columns</li>
+            <li>Pair colored badges with a text label</li>
+            <li>Auto-save drafts on New Bill every keystroke</li>
+            <li>Show keyboard shortcuts next to power actions</li>
+            <li>Use <code>fmtINR()</code> for every rupee value</li>
+            <li>Confirm destructive actions with a modal</li>
+          </ul>
+        </div>
+        <div className="col dont">
+          <h5>{"Don\u2019t"}</h5>
+          <ul style={{listStyle:'none', padding:0, margin:0}}>
+            <li>{"Don\u2019t invent new colors — use CSS variables"}</li>
+            <li>{"Don\u2019t use emoji in production UI"}</li>
+            <li>{"Don\u2019t nest modals"}</li>
+            <li>{"Don\u2019t use tooltips to hide required information"}</li>
+            <li>{"Don\u2019t use the items-tbl pattern outside New Bill"}</li>
+            <li>{"Don\u2019t use more than one primary button per screen"}</li>
+            <li>{"Don\u2019t hardcode text — use resource files for i18n"}</li>
+            <li>{"Don\u2019t use text smaller than 12px on desktop"}</li>
+          </ul>
+        </div>
+      </div>
+    </Section>
+  </div>
+);
+</script>
+
+<script type="text/babel">
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <ToastProvider><UIKit/></ToastProvider>
+);
