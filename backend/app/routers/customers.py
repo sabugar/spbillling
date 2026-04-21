@@ -87,6 +87,17 @@ def delete_customer(
     return APIResponse(message="Customer deleted")
 
 
+@router.patch("/{customer_id}/active", response_model=APIResponse[CustomerOut])
+def set_customer_active(
+    customer_id: int,
+    active: bool = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    cust = customer_service.set_customer_active(db, customer_id, active, user.id)
+    return APIResponse(data=CustomerOut.model_validate(cust))
+
+
 @router.post("/import", response_model=APIResponse[CustomerImportResult])
 async def import_customers(
     file: UploadFile = File(...),

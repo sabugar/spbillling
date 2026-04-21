@@ -5,7 +5,10 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config.settings import settings
-from app.routers import auth, audit, bills, cheques, customers, payments, products, reports, settings as settings_router, users
+from app.routers import (
+    auth, audit, bills, cheques, customers, distributor_outlets, payments,
+    products, reports, settings as settings_router, users,
+)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -47,6 +50,7 @@ api_routers = [
     auth.router,
     users.router,
     customers.router,
+    distributor_outlets.router,
     products.router,
     bills.router,
     payments.router,

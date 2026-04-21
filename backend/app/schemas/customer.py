@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.customer import CustomerStatus, CustomerType
+from app.schemas.distributor_outlet import DOSearchResult
 
 
 class CustomerBase(BaseModel):
@@ -35,14 +36,22 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
-    customer_code: Optional[str] = Field(None, max_length=32)
+    consumer_number: str = Field(..., max_length=32, min_length=1)
+    do_id: int = Field(..., gt=0)
     registration_date: Optional[date] = None
     opening_balance: Decimal = Decimal("0")
     opening_empty_bottles: int = 0
     status: CustomerStatus = CustomerStatus.ACTIVE
 
+    @field_validator("consumer_number")
+    @classmethod
+    def trim_consumer(cls, v: str) -> str:
+        return v.strip()
+
 
 class CustomerUpdate(BaseModel):
+    consumer_number: Optional[str] = Field(None, max_length=32, min_length=1)
+    do_id: Optional[int] = Field(None, gt=0)
     name: Optional[str] = None
     mobile: Optional[str] = None
     alternate_mobile: Optional[str] = None
@@ -59,12 +68,19 @@ class CustomerUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[CustomerStatus] = None
 
+    @field_validator("consumer_number")
+    @classmethod
+    def trim_consumer(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip() if v else v
+
 
 class CustomerOut(CustomerBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    customer_code: Optional[str] = None
+    consumer_number: str
+    do_id: int
+    distributor_outlet: Optional[DOSearchResult] = None
     registration_date: date
     status: CustomerStatus
     opening_balance: Decimal
@@ -80,12 +96,14 @@ class CustomerSearchResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    consumer_number: str
     name: str
     mobile: str
     village: str
     city: str
     current_balance: Decimal
     current_empty_bottles: int
+    distributor_outlet: Optional[DOSearchResult] = None
 
 
 class CustomerImportError(BaseModel):

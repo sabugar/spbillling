@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audit import AuditAction
 from app.models.customer import Customer, CustomerStatus, CustomerType
+from app.models.distributor_outlet import DistributorOutlet
 from app.models.empty_bottle import EmptyBottleTransaction, EmptyBottleTxnType
 from app.schemas.customer import (
     CustomerCreate, CustomerImportError, CustomerImportResult, CustomerUpdate,
@@ -34,11 +35,39 @@ def _check_mobile_village_unique(
         )
 
 
+def _check_consumer_number_unique(
+    db: Session, consumer_number: str, exclude_id: Optional[int] = None
+) -> None:
+    stmt = select(Customer).where(
+        Customer.consumer_number == consumer_number,
+        Customer.is_deleted.is_(False),
+    )
+    if exclude_id:
+        stmt = stmt.where(Customer.id != exclude_id)
+    if db.scalar(stmt):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Consumer number '{consumer_number}' already exists",
+        )
+
+
+def _validate_do(db: Session, do_id: int) -> DistributorOutlet:
+    do = db.get(DistributorOutlet, do_id)
+    if not do or do.is_deleted:
+        raise HTTPException(status_code=400, detail="Distributor outlet not found")
+    if not do.is_active:
+        raise HTTPException(status_code=400, detail="Distributor outlet is inactive")
+    return do
+
+
 def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Customer:
     _check_mobile_village_unique(db, payload.mobile, payload.village)
+    _check_consumer_number_unique(db, payload.consumer_number)
+    _validate_do(db, payload.do_id)
 
     cust = Customer(
-        customer_code=payload.customer_code,
+        consumer_number=payload.consumer_number,
+        do_id=payload.do_id,
         name=payload.name,
         mobile=payload.mobile,
         alternate_mobile=payload.alternate_mobile,
@@ -91,6 +120,12 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate, user
         new_village = data.get("village", cust.village)
         _check_mobile_village_unique(db, new_mobile, new_village, exclude_id=cust.id)
 
+    if "consumer_number" in data and data["consumer_number"] != cust.consumer_number:
+        _check_consumer_number_unique(db, data["consumer_number"], exclude_id=cust.id)
+
+    if "do_id" in data and data["do_id"] != cust.do_id:
+        _validate_do(db, data["do_id"])
+
     changes = {}
     for k, v in data.items():
         old = getattr(cust, k)
@@ -120,6 +155,20 @@ def soft_delete_customer(db: Session, customer_id: int, user_id: int) -> None:
     write_audit(db, entity_type="customer", entity_id=cust.id,
                 action=AuditAction.DELETE, user_id=user_id)
     db.commit()
+
+
+def set_customer_active(db: Session, customer_id: int, active: bool, user_id: int) -> Customer:
+    cust = get_customer(db, customer_id)
+    new_status = CustomerStatus.ACTIVE if active else CustomerStatus.INACTIVE
+    if cust.status == new_status:
+        return cust
+    cust.status = new_status
+    write_audit(db, entity_type="customer", entity_id=cust.id,
+                action=AuditAction.UPDATE, user_id=user_id,
+                changes={"status": new_status.value})
+    db.commit()
+    db.refresh(cust)
+    return cust
 
 
 def list_customers(
@@ -190,6 +239,16 @@ def import_customers_from_excel(
     imported = 0
     skipped = 0
 
+    # All imports bind to the first active DO as a fallback (owner can reassign later)
+    fallback_do = db.scalar(
+        select(DistributorOutlet).where(
+            DistributorOutlet.is_deleted.is_(False),
+            DistributorOutlet.is_active.is_(True),
+        ).order_by(DistributorOutlet.id.asc())
+    )
+    if not fallback_do:
+        raise HTTPException(status_code=400, detail="No active Distributor Outlet exists. Create one before importing.")
+
     for idx, raw in enumerate(rows[1:], start=2):
         row = {headers[i]: (raw[i] if i < len(raw) else None) for i in range(len(headers))}
         try:
@@ -197,17 +256,21 @@ def import_customers_from_excel(
             mobile = str(row.get("Mobile", "") or "").strip()
             village = str(row.get("Village", "") or "").strip()
             city = str(row.get("City", "") or "").strip()
+            consumer_number = str(row.get("Consumer_Number", "") or "").strip()
             if not name or not mobile or not village:
                 raise ValueError("Name, Mobile and Village are required")
             if not mobile.isdigit() or len(mobile) < 10:
                 raise ValueError("Mobile must be 10+ digits")
+            if not consumer_number:
+                # auto-generate a placeholder the owner can edit later
+                consumer_number = f"TEMP-{mobile}"
 
             ctype_raw = (str(row.get("Type", "") or "domestic")).strip().lower()
             ctype = CustomerType.COMMERCIAL if ctype_raw.startswith("c") else CustomerType.DOMESTIC
             op_bal = Decimal(str(row.get("Opening_Balance", 0) or 0))
             op_bot = int(row.get("Opening_Bottles", 0) or 0)
 
-            # skip if duplicate
+            # skip if duplicate mobile+village OR duplicate consumer_number
             exists = db.scalar(select(Customer).where(
                 Customer.mobile == mobile,
                 Customer.village == village,
@@ -216,8 +279,16 @@ def import_customers_from_excel(
             if exists:
                 skipped += 1
                 continue
+            if db.scalar(select(Customer).where(
+                Customer.consumer_number == consumer_number,
+                Customer.is_deleted.is_(False),
+            )):
+                skipped += 1
+                continue
 
             cust = Customer(
+                consumer_number=consumer_number,
+                do_id=fallback_do.id,
                 name=name, mobile=mobile, village=village, city=city or village,
                 customer_type=ctype, registration_date=date.today(),
                 opening_balance=op_bal, opening_empty_bottles=op_bot,
@@ -249,14 +320,17 @@ def export_customers_to_excel(db: Session) -> bytes:
     ws = wb.active
     ws.title = "Customers"
     headers = [
-        "ID", "Code", "Name", "Mobile", "Alt Mobile", "Village", "City",
-        "District", "State", "Pincode", "Type", "Status",
+        "ID", "Consumer Number", "DO Code", "DO Owner", "Name", "Mobile", "Alt Mobile",
+        "Village", "City", "District", "State", "Pincode", "Type", "Status",
         "Current Balance", "Empty Bottles", "Registration Date",
     ]
     ws.append(headers)
     for cust in db.scalars(select(Customer).where(Customer.is_deleted.is_(False)).order_by(Customer.name)):
+        do = cust.distributor_outlet
         ws.append([
-            cust.id, cust.customer_code, cust.name, cust.mobile, cust.alternate_mobile,
+            cust.id, cust.consumer_number,
+            do.code if do else "", do.owner_name if do else "",
+            cust.name, cust.mobile, cust.alternate_mobile,
             cust.village, cust.city, cust.district, cust.state, cust.pincode,
             cust.customer_type.value, cust.status.value,
             float(cust.current_balance), cust.current_empty_bottles,

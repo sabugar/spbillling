@@ -9,6 +9,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+from app.models.distributor_outlet import DistributorOutlet  # noqa: F401 (relationship target)
 
 
 class CustomerType(str, enum.Enum):
@@ -25,7 +26,12 @@ class Customer(Base, TimestampMixin):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    customer_code: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True, index=True)
+    consumer_number: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+
+    do_id: Mapped[int] = mapped_column(
+        ForeignKey("distributor_outlets.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
 
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     mobile: Mapped[str] = mapped_column(String(15), nullable=False, index=True)
@@ -68,6 +74,10 @@ class Customer(Base, TimestampMixin):
 
     created_by_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    distributor_outlet: Mapped["DistributorOutlet"] = relationship(
+        "DistributorOutlet", lazy="joined"
     )
 
     __table_args__ = (

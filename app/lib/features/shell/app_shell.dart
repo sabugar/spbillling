@@ -16,7 +16,9 @@ class _NavEntry {
 const _entries = [
   _NavEntry('Dashboard', Icons.dashboard_outlined, '/dashboard'),
   _NavEntry('Customers', Icons.people_outline, '/customers'),
+  _NavEntry('Distributor Outlets', Icons.store_outlined, '/outlets'),
   _NavEntry('Products', Icons.inventory_2_outlined, '/products'),
+  _NavEntry('Bills', Icons.receipt_outlined, '/bills'),
   _NavEntry('New Bill', Icons.receipt_long_outlined, '/bills/new'),
 ];
 
@@ -27,10 +29,11 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final path = GoRouterState.of(context).uri.path;
-    final current = _entries.firstWhere(
-      (e) => path.startsWith(e.path),
-      orElse: () => _entries.first,
-    );
+    // Match by longest prefix so `/bills/new` picks "New Bill" over "Bills".
+    final matches = _entries.where((e) => path == e.path || path.startsWith('${e.path}/'));
+    final current = matches.isEmpty
+        ? _entries.first
+        : matches.reduce((a, b) => a.path.length >= b.path.length ? a : b);
     return Scaffold(
       body: Row(
         children: [
@@ -48,6 +51,21 @@ class AppShell extends ConsumerWidget {
       ),
     );
   }
+}
+
+bool _isActive(String entryPath, String currentPath) {
+  if (currentPath == entryPath) return true;
+  if (!currentPath.startsWith('${entryPath}/')) return false;
+  // Only mark active if no longer entry matches.
+  for (final other in _entries) {
+    if (other.path == entryPath) continue;
+    if (other.path.length > entryPath.length &&
+        (currentPath == other.path ||
+            currentPath.startsWith('${other.path}/'))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 class _Sidebar extends StatelessWidget {
@@ -97,7 +115,7 @@ class _Sidebar extends StatelessWidget {
           const Divider(height: 1, color: DT.divider),
           const SizedBox(height: DT.s8),
           for (final e in _entries)
-            _NavTile(entry: e, active: currentPath.startsWith(e.path)),
+            _NavTile(entry: e, active: _isActive(e.path, currentPath)),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.all(DT.s12),

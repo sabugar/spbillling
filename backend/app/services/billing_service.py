@@ -70,9 +70,10 @@ def create_bill(db: Session, payload: BillCreate, user_id: int) -> Bill:
         variant, product = _load_variant_with_product(db, item.product_variant_id)
         rate = Decimal(item.rate) if item.rate is not None else variant.unit_price
         gst_rate = Decimal(item.gst_rate) if item.gst_rate is not None else variant.gst_rate
-        line_base = (rate * item.quantity).quantize(TWO)
-        gst_amount = (line_base * gst_rate / Decimal(100)).quantize(TWO)
-        line_total = (line_base + gst_amount).quantize(TWO)
+        # rate is GST-inclusive: total = rate * qty; derive gst and base from total
+        line_total = (rate * item.quantity).quantize(TWO)
+        gst_amount = (line_total * gst_rate / (Decimal(100) + gst_rate)).quantize(TWO)
+        line_base = (line_total - gst_amount).quantize(TWO)
         subtotal += line_base
         gst_total += gst_amount
 
@@ -93,6 +94,7 @@ def create_bill(db: Session, payload: BillCreate, user_id: int) -> Bill:
         ))
 
     discount = Decimal(payload.discount or 0)
+    # subtotal + gst_total already equals sum(line_total) — don't double-add
     total_amount = (subtotal + gst_total - discount).quantize(TWO)
     amount_paid = Decimal(payload.amount_paid or 0).quantize(TWO)
     balance_due = (total_amount - amount_paid).quantize(TWO)
@@ -172,6 +174,8 @@ def list_bills(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     status: Optional[BillStatus] = None,
+    bill_number_from: Optional[str] = None,
+    bill_number_to: Optional[str] = None,
 ):
     stmt = select(Bill).order_by(Bill.bill_date.desc(), Bill.id.desc())
     if customer_id:
@@ -182,6 +186,10 @@ def list_bills(
         stmt = stmt.where(Bill.bill_date <= to_date)
     if status:
         stmt = stmt.where(Bill.status == status)
+    if bill_number_from:
+        stmt = stmt.where(Bill.bill_number >= bill_number_from)
+    if bill_number_to:
+        stmt = stmt.where(Bill.bill_number <= bill_number_to)
     return stmt
 
 

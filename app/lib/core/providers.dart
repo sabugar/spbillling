@@ -4,6 +4,7 @@ import 'auth/auth_storage.dart';
 import '../data/repositories/auth_repo.dart';
 import '../data/repositories/bill_repo.dart';
 import '../data/repositories/customer_repo.dart';
+import '../data/repositories/do_repo.dart';
 import '../data/repositories/product_repo.dart';
 
 final authStorageProvider = Provider<AuthStorage>((ref) => AuthStorage());
@@ -16,3 +17,4 @@ final authRepoProvider = Provider<AuthRepo>((ref) => AuthRepo(ref.watch(apiClien
 final customerRepoProvider = Provider<CustomerRepo>((ref) => CustomerRepo(ref.watch(apiClientProvider)));
 final productRepoProvider = Provider<ProductRepo>((ref) => ProductRepo(ref.watch(apiClientProvider)));
 final billRepoProvider = Provider<BillRepo>((ref) => BillRepo(ref.watch(apiClientProvider)));
+final doRepoProvider = Provider<DORepo>((ref) => DORepo(ref.watch(apiClientProvider)));

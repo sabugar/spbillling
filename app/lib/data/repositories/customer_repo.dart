@@ -66,4 +66,10 @@ class CustomerRepo {
   Future<void> delete(int id) async {
     await _api.request('DELETE', '/customers/$id');
   }
+
+  Future<Customer> setActive(int id, bool active) async {
+    final data = await _api.request('PATCH', '/customers/$id/active',
+        query: {'active': active});
+    return Customer.fromJson(Map<String, dynamic>.from(data as Map));
+  }
 }

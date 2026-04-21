@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.bill import BillStatus, PaymentMode
+from app.schemas.distributor_outlet import DOSearchResult
 
 
 class ChequeDetails(BaseModel):
@@ -76,6 +77,16 @@ class BillOut(BaseModel):
     updated_at: datetime
 
 
+class BillCustomerMini(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    village: str
+    consumer_number: str
+    distributor_outlet: Optional[DOSearchResult] = None
+
+
 class BillSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +94,7 @@ class BillSummary(BaseModel):
     bill_number: str
     bill_date: date
     customer_id: int
+    customer: Optional[BillCustomerMini] = None
     total_amount: Decimal
     amount_paid: Decimal
     balance_due: Decimal

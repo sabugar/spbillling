@@ -3,28 +3,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/format/inr.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/design_tokens.dart';
-import '../../data/models/customer.dart';
-import '../../data/repositories/customer_repo.dart';
+import '../../data/models/distributor_outlet.dart';
+import '../../data/repositories/do_repo.dart';
 import '../auth/auth_controller.dart';
-import 'customer_form_dialog.dart';
 
-class CustomersScreen extends ConsumerStatefulWidget {
-  const CustomersScreen({super.key});
+class OutletsScreen extends ConsumerStatefulWidget {
+  const OutletsScreen({super.key});
 
   @override
-  ConsumerState<CustomersScreen> createState() => _CustomersScreenState();
+  ConsumerState<OutletsScreen> createState() => _OutletsScreenState();
 }
 
-class _CustomersScreenState extends ConsumerState<CustomersScreen> {
+class _OutletsScreenState extends ConsumerState<OutletsScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   int _page = 1;
   String _q = '';
-  Future<CustomerPage>? _future;
+  Future<DOPage>? _future;
 
   @override
   void initState() {
@@ -33,8 +31,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 
   void _load() {
-    _future =
-        ref.read(customerRepoProvider).list(page: _page, perPage: 25, q: _q);
+    _future = ref.read(doRepoProvider).list(page: _page, perPage: 25, q: _q);
     setState(() {});
   }
 
@@ -54,19 +51,17 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     });
   }
 
-  Future<void> _openForm({Customer? existing}) async {
-    final saved = await showDialog<Customer?>(
+  Future<void> _openForm({DistributorOutlet? existing}) async {
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => CustomerFormDialog(existing: existing),
+      builder: (_) => _OutletFormDialog(existing: existing),
     );
-    if (saved != null) _load();
+    if (saved == true) _load();
   }
 
-  Future<void> _toggleActive(Customer c) async {
+  Future<void> _toggleActive(DistributorOutlet o) async {
     try {
-      await ref
-          .read(customerRepoProvider)
-          .setActive(c.id, c.status != 'active');
+      await ref.read(doRepoProvider).setActive(o.id, !o.isActive);
       _load();
     } catch (e) {
       if (mounted) {
@@ -77,12 +72,12 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     }
   }
 
-  Future<void> _delete(Customer c) async {
+  Future<void> _delete(DistributorOutlet o) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete customer?'),
-        content: Text('Soft-delete ${c.name} — ${c.village}?'),
+        title: const Text('Delete outlet?'),
+        content: Text('Delete DO ${o.code} — ${o.ownerName}?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -96,7 +91,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     );
     if (confirm != true) return;
     try {
-      await ref.read(customerRepoProvider).delete(c.id);
+      await ref.read(doRepoProvider).delete(o.id);
       _load();
     } catch (e) {
       if (mounted) {
@@ -124,19 +119,19 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     controller: _searchCtrl,
                     onChanged: _onSearchChanged,
                     decoration: const InputDecoration(
-                      hintText:
-                          'Search by name, mobile, consumer #, or village',
+                      hintText: 'Search by code, owner, or location',
                       prefixIcon: Icon(Icons.search, size: 18),
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: DT.s12),
-              ElevatedButton.icon(
-                onPressed: () => _openForm(),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Customer'),
-              ),
+              if (isAdmin)
+                ElevatedButton.icon(
+                  onPressed: () => _openForm(),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add Outlet'),
+                ),
             ],
           ),
           const SizedBox(height: DT.s16),
@@ -147,7 +142,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                 borderRadius: BorderRadius.circular(DT.rMd),
                 border: Border.all(color: DT.border),
               ),
-              child: FutureBuilder<CustomerPage>(
+              child: FutureBuilder<DOPage>(
                 future: _future,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
@@ -164,7 +159,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                   final page = snap.data!;
                   if (page.items.isEmpty) {
                     return const Center(
-                      child: Text('No customers yet.',
+                      child: Text('No distributor outlets yet.',
                           style: TextStyle(color: DT.text2)),
                     );
                   }
@@ -183,39 +178,22 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               dataRowMinHeight: DT.rowHeight,
                               dataRowMaxHeight: DT.rowHeight,
                               columns: const [
-                                DataColumn(label: Text('Name')),
-                                DataColumn(label: Text('Village')),
-                                DataColumn(label: Text('Mobile')),
-                                DataColumn(label: Text('Consumer #')),
-                                DataColumn(label: Text('DO')),
-                                DataColumn(label: Text('Type')),
-                                DataColumn(
-                                    label: Text('Balance'), numeric: true),
-                                DataColumn(
-                                    label: Text('Empty'), numeric: true),
+                                DataColumn(label: Text('Code')),
+                                DataColumn(label: Text('Owner Name')),
+                                DataColumn(label: Text('Location')),
                                 DataColumn(label: Text('Status')),
                                 DataColumn(label: Text('')),
                               ],
                               rows: [
-                                for (final c in page.items)
+                                for (final o in page.items)
                                   DataRow(cells: [
-                                    DataCell(Text(c.name,
+                                    DataCell(Text(o.code,
+                                        style: AppTheme.mono(size: 12))),
+                                    DataCell(Text(o.ownerName,
                                         style: const TextStyle(
                                             fontWeight: FontWeight.w500))),
-                                    DataCell(Text(c.village)),
-                                    DataCell(Text(c.mobile,
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(Text(c.consumerNumber,
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(Text(
-                                        c.distributorOutlet?.code ?? '',
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(_typeChip(c.customerType)),
-                                    DataCell(Text(fmtINR(c.balance),
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(Text(c.emptyPending.toString(),
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(_statusChip(c.status)),
+                                    DataCell(Text(o.location)),
+                                    DataCell(_statusChip(o.isActive)),
                                     DataCell(Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -223,24 +201,26 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                           tooltip: 'Edit',
                                           icon: const Icon(Icons.edit_outlined,
                                               size: 16),
-                                          onPressed: () =>
-                                              _openForm(existing: c),
+                                          onPressed: isAdmin
+                                              ? () =>
+                                                  _openForm(existing: o)
+                                              : null,
                                         ),
                                         IconButton(
-                                          tooltip: c.status == 'active'
+                                          tooltip: o.isActive
                                               ? 'Deactivate'
                                               : 'Activate',
                                           icon: Icon(
-                                            c.status == 'active'
+                                            o.isActive
                                                 ? Icons.toggle_on
                                                 : Icons.toggle_off,
                                             size: 18,
-                                            color: c.status == 'active'
+                                            color: o.isActive
                                                 ? DT.ok600
                                                 : DT.text3,
                                           ),
                                           onPressed: isAdmin
-                                              ? () => _toggleActive(c)
+                                              ? () => _toggleActive(o)
                                               : null,
                                         ),
                                         IconButton(
@@ -250,7 +230,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                               size: 16,
                                               color: DT.err600),
                                           onPressed:
-                                              isAdmin ? () => _delete(c) : null,
+                                              isAdmin ? () => _delete(o) : null,
                                         ),
                                       ],
                                     )),
@@ -267,7 +247,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                         child: Row(
                           children: [
                             Text(
-                                '${page.total} customers · page ${page.page} of ${page.lastPage}',
+                                '${page.total} outlets · page ${page.page} of ${page.lastPage}',
                                 style: const TextStyle(
                                     color: DT.text2, fontSize: DT.fsSm)),
                             const Spacer(),
@@ -303,36 +283,168 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     );
   }
 
-  Widget _typeChip(String t) => Container(
+  Widget _statusChip(bool active) => Container(
         padding: const EdgeInsets.symmetric(horizontal: DT.s8, vertical: 2),
         decoration: BoxDecoration(
-          color: t == 'commercial' ? DT.warn50 : DT.brand50,
+          color: active ? DT.ok50 : DT.surface3,
           borderRadius: BorderRadius.circular(DT.rXs),
         ),
         child: Text(
-          t,
+          active ? 'Active' : 'Inactive',
           style: TextStyle(
-            color: t == 'commercial' ? DT.warn700 : DT.brand700,
+            color: active ? DT.ok700 : DT.text2,
             fontSize: DT.fsSm,
             fontWeight: FontWeight.w600,
           ),
         ),
       );
+}
 
-  Widget _statusChip(String s) {
-    final active = s == 'active';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: DT.s8, vertical: 2),
-      decoration: BoxDecoration(
-        color: active ? DT.ok50 : DT.surface3,
-        borderRadius: BorderRadius.circular(DT.rXs),
-      ),
-      child: Text(
-        active ? 'Active' : 'Inactive',
-        style: TextStyle(
-          color: active ? DT.ok700 : DT.text2,
-          fontSize: DT.fsSm,
-          fontWeight: FontWeight.w600,
+class _OutletFormDialog extends ConsumerStatefulWidget {
+  final DistributorOutlet? existing;
+  const _OutletFormDialog({this.existing});
+
+  @override
+  ConsumerState<_OutletFormDialog> createState() => _OutletFormDialogState();
+}
+
+class _OutletFormDialogState extends ConsumerState<_OutletFormDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _code;
+  late final TextEditingController _owner;
+  late final TextEditingController _location;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _code = TextEditingController(text: e?.code ?? '');
+    _owner = TextEditingController(text: e?.ownerName ?? '');
+    _location = TextEditingController(text: e?.location ?? '');
+  }
+
+  @override
+  void dispose() {
+    _code.dispose();
+    _owner.dispose();
+    _location.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final outlet = DistributorOutlet(
+        id: widget.existing?.id ?? 0,
+        code: _code.text.trim().toUpperCase(),
+        ownerName: _owner.text.trim(),
+        location: _location.text.trim(),
+        isActive: widget.existing?.isActive ?? true,
+      );
+      final repo = ref.read(doRepoProvider);
+      if (widget.existing == null) {
+        await repo.create(outlet);
+      } else {
+        await repo.update(widget.existing!.id, outlet);
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title =
+        widget.existing == null ? 'Add distributor outlet' : 'Edit outlet';
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(DT.s20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(title,
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: DT.s16),
+                if (_error != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(DT.s8),
+                    color: DT.err50,
+                    child: Text(_error!,
+                        style: const TextStyle(
+                            color: DT.err700, fontSize: DT.fsSm)),
+                  ),
+                  const SizedBox(height: DT.s12),
+                ],
+                TextFormField(
+                  controller: _code,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Code * (e.g., AA)',
+                    helperText: 'Short unique code, uppercased',
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: DT.s12),
+                TextFormField(
+                  controller: _owner,
+                  decoration:
+                      const InputDecoration(labelText: 'Owner name *'),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: DT.s12),
+                TextFormField(
+                  controller: _location,
+                  decoration: const InputDecoration(labelText: 'Location *'),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: DT.s20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _saving
+                          ? null
+                          : () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: DT.s8),
+                    ElevatedButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation(Colors.white),
+                              ),
+                            )
+                          : const Text('Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

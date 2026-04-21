@@ -1,3 +1,5 @@
+import 'distributor_outlet.dart';
+
 double _asDouble(dynamic v) {
   if (v == null) return 0.0;
   if (v is num) return v.toDouble();
@@ -15,7 +17,9 @@ int _asInt(dynamic v) {
 
 class Customer {
   final int id;
-  final String customerCode;
+  final String consumerNumber;
+  final int doId;
+  final DistributorOutlet? distributorOutlet;
   final String name;
   final String mobile;
   final String? altMobile;
@@ -34,7 +38,9 @@ class Customer {
 
   Customer({
     required this.id,
-    required this.customerCode,
+    required this.consumerNumber,
+    required this.doId,
+    this.distributorOutlet,
     required this.name,
     required this.mobile,
     this.altMobile,
@@ -54,10 +60,16 @@ class Customer {
 
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
         id: j['id'] as int,
-        customerCode: j['customer_code'] as String? ?? '',
+        consumerNumber: j['consumer_number'] as String? ?? '',
+        doId: _asInt(j['do_id']),
+        distributorOutlet: j['distributor_outlet'] != null
+            ? DistributorOutlet.fromJson(
+                Map<String, dynamic>.from(j['distributor_outlet'] as Map))
+            : null,
         name: j['name'] as String,
         mobile: j['mobile'] as String,
-        altMobile: j['alt_mobile'] as String?,
+        altMobile:
+            (j['alternate_mobile'] ?? j['alt_mobile']) as String?,
         village: j['village'] as String,
         city: j['city'] as String?,
         district: j['district'] as String?,
@@ -66,18 +78,22 @@ class Customer {
         fullAddress: j['full_address'] as String?,
         customerType: j['customer_type'] as String? ?? 'domestic',
         status: j['status'] as String? ?? 'active',
-        balance: _asDouble(j['balance']),
-        emptyPending: _asInt(j['empty_pending']),
+        balance: _asDouble(j['current_balance'] ?? j['balance']),
+        emptyPending:
+            _asInt(j['current_empty_bottles'] ?? j['empty_pending']),
         notes: j['notes'] as String?,
         isDeleted: j['is_deleted'] as bool? ?? false,
       );
 
   Map<String, dynamic> toCreateJson() => {
+        'consumer_number': consumerNumber,
+        'do_id': doId,
         'name': name,
         'mobile': mobile,
-        if (altMobile?.isNotEmpty == true) 'alt_mobile': altMobile,
+        if (altMobile?.isNotEmpty == true) 'alternate_mobile': altMobile,
         'village': village,
-        if (city?.isNotEmpty == true) 'city': city,
+        // Backend requires city (NOT NULL). Seed to village as fallback.
+        'city': (city?.isNotEmpty == true) ? city : village,
         if (district?.isNotEmpty == true) 'district': district,
         if (state?.isNotEmpty == true) 'state': state,
         if (pincode?.isNotEmpty == true) 'pincode': pincode,
@@ -85,5 +101,22 @@ class Customer {
         'customer_type': customerType,
         'status': status,
         if (notes?.isNotEmpty == true) 'notes': notes,
+      };
+
+  Map<String, dynamic> toUpdateJson() => {
+        'consumer_number': consumerNumber,
+        'do_id': doId,
+        'name': name,
+        'mobile': mobile,
+        'alternate_mobile': altMobile,
+        'village': village,
+        'city': city,
+        'district': district,
+        'state': state,
+        'pincode': pincode,
+        'full_address': fullAddress,
+        'customer_type': customerType,
+        'status': status,
+        'notes': notes,
       };
 }

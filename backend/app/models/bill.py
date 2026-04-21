@@ -67,6 +67,9 @@ class Bill(Base, TimestampMixin):
     items: Mapped[list["BillItem"]] = relationship(
         back_populates="bill", cascade="all, delete-orphan", lazy="selectin"
     )
+    customer: Mapped["Customer"] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Customer", lazy="joined"
+    )
 
     __table_args__ = (
         Index("ix_bills_customer_date", "customer_id", "bill_date"),

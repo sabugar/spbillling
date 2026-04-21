@@ -25,6 +25,8 @@ def list_bills(
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
     status: Optional[BillStatus] = None,
+    bill_number_from: Optional[str] = Query(None),
+    bill_number_to: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -32,6 +34,7 @@ def list_bills(
 ):
     stmt = billing_service.list_bills(
         db, customer_id=customer_id, from_date=from_date, to_date=to_date, status=status,
+        bill_number_from=bill_number_from, bill_number_to=bill_number_to,
     )
     return paginate(db, stmt, page=page, per_page=per_page, item_schema=BillSummary)
 

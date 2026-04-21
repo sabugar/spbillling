@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/format/inr.dart';
 import '../../core/providers.dart';
@@ -11,6 +10,7 @@ import '../../core/theme/design_tokens.dart';
 import '../../data/models/bill.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/product.dart';
+import '../customers/customer_form_dialog.dart';
 
 class NewBillScreen extends ConsumerStatefulWidget {
   const NewBillScreen({super.key});
@@ -26,10 +26,13 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
   final _notesCtrl = TextEditingController();
   final _chequeNum = TextEditingController();
   final _chequeBank = TextEditingController();
+  final _searchFocus = FocusNode();
   DateTime _chequeDate = DateTime.now();
 
   Timer? _debounce;
   List<Customer> _results = [];
+  bool _searchedOnce = false;
+  String _lastSearchQuery = '';
   Customer? _selectedCustomer;
   DateTime _billDate = DateTime.now();
   String _paymentMode = 'cash';
@@ -55,6 +58,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
     _notesCtrl.dispose();
     _chequeNum.dispose();
     _chequeBank.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -67,6 +71,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
         _variants = list;
         _loadingVariants = false;
       });
+      _seedDefaultRowIfEmpty();
     } catch (e) {
       setState(() {
         _loadingVariants = false;
@@ -75,18 +80,86 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
     }
   }
 
+  ProductVariant? _defaultFirstRowVariant() {
+    if (_variants.isEmpty) return null;
+    // Prefer any cylinder variant whose name mentions "15".
+    ProductVariant? match;
+    for (final v in _variants) {
+      final label = v.displayName.toLowerCase();
+      if (label.contains('15') &&
+          (label.contains('kg') || label.contains('cylinder'))) {
+        match = v;
+        break;
+      }
+    }
+    // Fallback: first variant with "cylinder" in label; else first variant.
+    match ??= _variants.firstWhere(
+      (v) => v.displayName.toLowerCase().contains('cylinder'),
+      orElse: () => _variants.first,
+    );
+    return match;
+  }
+
+  void _seedDefaultRowIfEmpty() {
+    if (_items.isNotEmpty) return;
+    final v = _defaultFirstRowVariant();
+    if (v == null) return;
+    setState(() {
+      _items.add(BillItemDraft(
+        variantId: v.id,
+        variantLabel: v.displayName,
+        quantity: 1,
+        rate: 2950, // owner-requested default
+        gstRate: v.gstRate,
+      ));
+    });
+  }
+
   void _search(String v) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () async {
-      if (v.trim().isEmpty) {
-        setState(() => _results = []);
+      final q = v.trim();
+      if (q.isEmpty) {
+        setState(() {
+          _results = [];
+          _searchedOnce = false;
+          _lastSearchQuery = '';
+        });
         return;
       }
       try {
-        final r = await ref.read(customerRepoProvider).search(v.trim());
-        if (mounted) setState(() => _results = r);
+        final r = await ref.read(customerRepoProvider).search(q);
+        if (mounted) {
+          setState(() {
+            _results = r;
+            _searchedOnce = true;
+            _lastSearchQuery = q;
+          });
+        }
       } catch (_) {}
     });
+  }
+
+  Future<void> _addNewCustomerInline() async {
+    final query = _lastSearchQuery;
+    final digits = query.replaceAll(RegExp(r'\D'), '');
+    final prefillMobile = digits.length >= 10 ? digits.substring(0, 10) : null;
+    final prefillName = (prefillMobile == null && query.isNotEmpty) ? query : null;
+    final saved = await showDialog<Customer?>(
+      context: context,
+      builder: (_) => CustomerFormDialog(
+        prefillName: prefillName,
+        prefillMobile: prefillMobile,
+      ),
+    );
+    if (saved != null) {
+      setState(() {
+        _selectedCustomer = saved;
+        _results = [];
+        _searchedOnce = false;
+        _searchCtrl.text = '${saved.name} — ${saved.village}';
+      });
+    }
   }
 
   void _addRow() {
@@ -113,8 +186,9 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
     });
   }
 
-  double get _subtotal =>
-      _items.fold(0, (s, it) => s + it.lineSubtotal);
+  // GST is price-inclusive. Subtotal = sum(lineBase), GST = sum(lineGst).
+  // Grand = Subtotal + GST − discount  (= sum(lineTotal) − discount).
+  double get _subtotal => _items.fold(0, (s, it) => s + it.lineBase);
   double get _gst => _items.fold(0, (s, it) => s + it.lineGst);
   double get _discount => double.tryParse(_discountCtrl.text) ?? 0;
   double get _total => _subtotal + _gst - _discount;
@@ -137,6 +211,28 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
     if (d != null) setState(() => _billDate = d);
+  }
+
+  void _resetForNextBill() {
+    setState(() {
+      _items.clear();
+      _selectedCustomer = null;
+      _results = [];
+      _searchedOnce = false;
+      _lastSearchQuery = '';
+      _searchCtrl.clear();
+      _discountCtrl.text = '0';
+      _paidCtrl.text = '0';
+      _notesCtrl.clear();
+      _chequeNum.clear();
+      _chequeBank.clear();
+      _chequeDate = DateTime.now();
+      _billDate = DateTime.now();
+      _paymentMode = 'cash';
+      _error = null;
+    });
+    _seedDefaultRowIfEmpty();
+    _searchFocus.requestFocus();
   }
 
   Future<void> _save() async {
@@ -168,10 +264,21 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
             discount: _discount,
             amountPaid: _paid,
             paymentMode: _paymentMode,
-            notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+            notes: _notesCtrl.text.trim().isEmpty
+                ? null
+                : _notesCtrl.text.trim(),
             chequeDetails: cheque,
           );
-      if (mounted) context.go('/bills/${bill.id}/pdf');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Bill ${bill.billNumber} saved'),
+          backgroundColor: DT.ok600,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      _saving = false;
+      _resetForNextBill();
     } catch (e) {
       setState(() {
         _saving = false;
@@ -248,37 +355,86 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
         children: [
           TextField(
             controller: _searchCtrl,
+            focusNode: _searchFocus,
             onChanged: _search,
             decoration: const InputDecoration(
-              hintText: 'Search by mobile or name',
+              hintText: 'Search by mobile, consumer #, or name',
               prefixIcon: Icon(Icons.search, size: 18),
             ),
           ),
-          if (_selectedCustomer == null && _results.isNotEmpty) ...[
+          if (_selectedCustomer == null &&
+              _searchedOnce &&
+              _lastSearchQuery.isNotEmpty) ...[
             const SizedBox(height: DT.s8),
             Container(
-              constraints: const BoxConstraints(maxHeight: 180),
+              constraints: const BoxConstraints(maxHeight: 220),
               decoration: BoxDecoration(
                 border: Border.all(color: DT.border),
                 borderRadius: BorderRadius.circular(DT.rSm),
               ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _results.length,
-                itemBuilder: (_, i) {
-                  final c = _results[i];
-                  return ListTile(
-                    dense: true,
-                    title: Text('${c.name} — ${c.village}'),
-                    subtitle: Text(c.mobile,
-                        style: AppTheme.mono(size: 11, color: DT.text2)),
-                    onTap: () => setState(() {
-                      _selectedCustomer = c;
-                      _results = [];
-                      _searchCtrl.text = '${c.name} — ${c.village}';
-                    }),
-                  );
-                },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_results.isNotEmpty)
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _results.length,
+                        itemBuilder: (_, i) {
+                          final c = _results[i];
+                          final doCode = c.distributorOutlet?.code ?? '';
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                                '${c.name} — ${c.village}${doCode.isEmpty ? '' : '  ·  DO $doCode'}'),
+                            subtitle: Text(
+                              '${c.mobile}${c.consumerNumber.isEmpty ? '' : '  ·  ${c.consumerNumber}'}',
+                              style:
+                                  AppTheme.mono(size: 11, color: DT.text2),
+                            ),
+                            onTap: () => setState(() {
+                              _selectedCustomer = c;
+                              _results = [];
+                              _searchedOnce = false;
+                              _searchCtrl.text = '${c.name} — ${c.village}';
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_results.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(DT.s12),
+                      child: Text('No customers match.',
+                          style: TextStyle(color: DT.text2)),
+                    ),
+                  const Divider(height: 1, color: DT.divider),
+                  InkWell(
+                    onTap: _addNewCustomerInline,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: DT.s12, vertical: DT.s12),
+                      color: DT.brand50,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.add_circle,
+                              size: 16, color: DT.brand700),
+                          const SizedBox(width: DT.s8),
+                          Expanded(
+                            child: Text(
+                              'Add new customer "$_lastSearchQuery"',
+                              style: const TextStyle(
+                                  color: DT.brand800,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward,
+                              size: 14, color: DT.brand700),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -310,8 +466,10 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                       ),
                     ],
                   ),
-                  Text(_selectedCustomer!.mobile,
-                      style: AppTheme.mono(size: 11, color: DT.text2)),
+                  Text(
+                    '${_selectedCustomer!.mobile}  ·  ${_selectedCustomer!.consumerNumber}${_selectedCustomer!.distributorOutlet == null ? '' : '  ·  DO ${_selectedCustomer!.distributorOutlet!.code}'}',
+                    style: AppTheme.mono(size: 11, color: DT.text2),
+                  ),
                   const SizedBox(height: DT.s8),
                   Wrap(
                     spacing: DT.s8,
@@ -438,11 +596,12 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                 ),
               ),
               SizedBox(
-                width: 100,
+                width: 110,
                 child: TextFormField(
                   initialValue: d.rate.toStringAsFixed(2),
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Rate'),
+                  decoration:
+                      const InputDecoration(labelText: 'Rate (incl GST)'),
                   onChanged: (v) =>
                       setState(() => d.rate = double.tryParse(v) ?? 0),
                 ),
@@ -475,8 +634,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: Text('Line total: ${fmtINR(d.lineTotal)}',
-                style:
-                    AppTheme.mono(size: 12, weight: FontWeight.w600)),
+                style: AppTheme.mono(size: 12, weight: FontWeight.w600)),
           ),
         ],
       ),
@@ -496,7 +654,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
             Text('Summary',
                 style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: DT.s12),
-            _sumRow('Subtotal', fmtINR(_subtotal)),
+            _sumRow('Subtotal (excl GST)', fmtINR(_subtotal)),
             _sumRow('GST', fmtINR(_gst)),
             TextField(
               controller: _discountCtrl,
@@ -505,13 +663,12 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
               decoration: const InputDecoration(labelText: 'Discount'),
             ),
             const SizedBox(height: DT.s8),
-            _sumRow('Total', fmtINR(_total),
+            _sumRow('Grand Total', fmtINR(_total),
                 bold: true, size: 16, color: DT.text),
             const Divider(height: DT.s24, color: DT.divider),
             DropdownButtonFormField<String>(
               initialValue: _paymentMode,
-              decoration:
-                  const InputDecoration(labelText: 'Payment mode'),
+              decoration: const InputDecoration(labelText: 'Payment mode'),
               items: const [
                 DropdownMenuItem(value: 'cash', child: Text('Cash')),
                 DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
@@ -519,8 +676,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                 DropdownMenuItem(value: 'card', child: Text('Card')),
                 DropdownMenuItem(value: 'credit', child: Text('Credit')),
               ],
-              onChanged: (v) =>
-                  setState(() => _paymentMode = v ?? 'cash'),
+              onChanged: (v) => setState(() => _paymentMode = v ?? 'cash'),
             ),
             const SizedBox(height: DT.s8),
             TextField(
@@ -539,14 +695,13 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
               const SizedBox(height: DT.s8),
               TextField(
                 controller: _chequeBank,
-                decoration:
-                    const InputDecoration(labelText: 'Bank name'),
+                decoration: const InputDecoration(labelText: 'Bank name'),
               ),
               const SizedBox(height: DT.s8),
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today, size: 14),
-                label:
-                    Text('Cheque date: ${_chequeDate.toIso8601String().split('T').first}'),
+                label: Text(
+                    'Cheque date: ${_chequeDate.toIso8601String().split('T').first}'),
                 onPressed: () async {
                   final d = await showDatePicker(
                     context: context,
@@ -593,7 +748,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                         ),
                       )
                     : const Icon(Icons.check, size: 16),
-                label: const Text('Save & Print'),
+                label: const Text('Save'),
               ),
             ),
           ],

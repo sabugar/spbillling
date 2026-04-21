@@ -1,4 +1,4 @@
-"""Seed script: creates default admin user, sample categories/products, and default settings.
+"""Seed script: creates default admin user, bootstrap DO, sample categories/products, and default settings.
 
 Run: python -m scripts.seed
 """
@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from app.config.database import SessionLocal
+from app.models.distributor_outlet import DistributorOutlet
 from app.models.product import Product, ProductCategory, ProductVariant
 from app.models.setting import Setting
 from app.models.user import User, UserRole
@@ -29,6 +30,20 @@ def seed_admin(db):
     db.add(admin)
     db.commit()
     print("✓ created admin user (username=admin, password=admin123)")
+
+
+def seed_distributor_outlet(db):
+    if db.scalar(select(DistributorOutlet)):
+        print("✓ distributor outlet(s) already present")
+        return
+    db.add(DistributorOutlet(
+        code="AA",
+        owner_name="Default Outlet",
+        location="-",
+        is_active=True,
+    ))
+    db.commit()
+    print("✓ bootstrap distributor outlet seeded (code=AA)")
 
 
 def seed_settings(db):
@@ -71,15 +86,16 @@ def seed_products(db):
     db.flush()
 
     variants = [
+        # Cylinder variants — all GST 5% (price-inclusive).
         ProductVariant(product_id=cyl.id, name="Domestic 14.2kg",
                        unit_price=Decimal("1100"), deposit_amount=Decimal("2200"),
                        gst_rate=Decimal("5"), stock_quantity=50),
         ProductVariant(product_id=cyl.id, name="Commercial 15kg",
-                       unit_price=Decimal("1800"), deposit_amount=Decimal("2500"),
-                       gst_rate=Decimal("18"), stock_quantity=30),
+                       unit_price=Decimal("2950"), deposit_amount=Decimal("2500"),
+                       gst_rate=Decimal("5"), stock_quantity=30),
         ProductVariant(product_id=cyl.id, name="Commercial 21kg",
                        unit_price=Decimal("2400"), deposit_amount=Decimal("3000"),
-                       gst_rate=Decimal("18"), stock_quantity=20),
+                       gst_rate=Decimal("5"), stock_quantity=20),
         ProductVariant(product_id=reg.id, name="Standard",
                        unit_price=Decimal("250"), gst_rate=Decimal("18"), stock_quantity=40),
         ProductVariant(product_id=stove.id, name="2-Burner",
@@ -94,6 +110,7 @@ def main():
     db = SessionLocal()
     try:
         seed_admin(db)
+        seed_distributor_outlet(db)
         seed_settings(db)
         seed_products(db)
         print("\n✅ Seed complete.")

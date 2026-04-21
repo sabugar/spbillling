@@ -30,9 +30,12 @@ class BillItemDraft {
     this.gstRate = 0,
   });
 
-  double get lineSubtotal => quantity * rate;
-  double get lineGst => lineSubtotal * (gstRate / 100.0);
-  double get lineTotal => lineSubtotal + lineGst;
+  // Rate is GST-INCLUSIVE. Total is rate*qty; GST/base derived by reverse math.
+  double get lineTotal => quantity * rate;
+  double get lineGst => lineTotal * gstRate / (100.0 + gstRate);
+  double get lineBase => lineTotal - lineGst;
+  // Legacy alias — still means "excl. GST" (renamed conceptually to base).
+  double get lineSubtotal => lineBase;
 
   Map<String, dynamic> toJson() => {
         'product_variant_id': variantId,
@@ -80,13 +83,19 @@ class Bill {
     required this.items,
   });
 
-  factory Bill.fromJson(Map<String, dynamic> j) => Bill(
+  factory Bill.fromJson(Map<String, dynamic> j) {
+    final cust = j['customer'];
+    final Map<String, dynamic>? custMap =
+        cust is Map ? Map<String, dynamic>.from(cust) : null;
+    return Bill(
         id: _i(j['id']),
         billNumber: j['bill_number'] as String? ?? '',
-        billDate: DateTime.tryParse(j['bill_date'] as String? ?? '') ?? DateTime.now(),
+        billDate: DateTime.tryParse(j['bill_date'] as String? ?? '') ??
+            DateTime.now(),
         customerId: _i(j['customer_id']),
-        customerName: j['customer_name'] as String?,
-        customerVillage: j['customer_village'] as String?,
+        customerName: custMap?['name'] as String? ?? j['customer_name'] as String?,
+        customerVillage:
+            custMap?['village'] as String? ?? j['customer_village'] as String?,
         subtotal: _d(j['subtotal']),
         gstAmount: _d(j['gst_amount']),
         discount: _d(j['discount']),
@@ -100,4 +109,5 @@ class Bill {
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
       );
+  }
 }
