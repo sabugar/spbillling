@@ -12,7 +12,7 @@ class CustomerBase(BaseModel):
     name: str = Field(..., max_length=150)
     mobile: str = Field(..., min_length=10, max_length=15)
     alternate_mobile: Optional[str] = Field(None, max_length=15)
-    village: str = Field(..., max_length=100)
+    village: Optional[str] = Field(None, max_length=100)
     city: str = Field(..., max_length=100)
     district: Optional[str] = Field(None, max_length=100)
     state: Optional[str] = Field("Gujarat", max_length=100)
@@ -36,7 +36,7 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
-    consumer_number: str = Field(..., max_length=32, min_length=1)
+    consumer_number: Optional[str] = Field(None, max_length=32)
     do_id: int = Field(..., gt=0)
     registration_date: Optional[date] = None
     opening_balance: Decimal = Decimal("0")
@@ -45,12 +45,15 @@ class CustomerCreate(CustomerBase):
 
     @field_validator("consumer_number")
     @classmethod
-    def trim_consumer(cls, v: str) -> str:
-        return v.strip()
+    def trim_consumer(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class CustomerUpdate(BaseModel):
-    consumer_number: Optional[str] = Field(None, max_length=32, min_length=1)
+    consumer_number: Optional[str] = Field(None, max_length=32)
     do_id: Optional[int] = Field(None, gt=0)
     name: Optional[str] = None
     mobile: Optional[str] = None
@@ -71,14 +74,17 @@ class CustomerUpdate(BaseModel):
     @field_validator("consumer_number")
     @classmethod
     def trim_consumer(cls, v: Optional[str]) -> Optional[str]:
-        return v.strip() if v else v
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class CustomerOut(CustomerBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    consumer_number: str
+    consumer_number: Optional[str] = None
     do_id: int
     distributor_outlet: Optional[DOSearchResult] = None
     registration_date: date
@@ -96,10 +102,10 @@ class CustomerSearchResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    consumer_number: str
+    consumer_number: Optional[str] = None
     name: str
     mobile: str
-    village: str
+    village: Optional[str] = None
     city: str
     current_balance: Decimal
     current_empty_bottles: int

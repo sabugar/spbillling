@@ -24,6 +24,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   Timer? _debounce;
   int _page = 1;
   String _q = '';
+  String _statusFilter = 'active';
   Future<CustomerPage>? _future;
 
   @override
@@ -33,8 +34,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 
   void _load() {
-    _future =
-        ref.read(customerRepoProvider).list(page: _page, perPage: 25, q: _q);
+    _future = ref.read(customerRepoProvider).list(
+        page: _page, perPage: 25, q: _q, status: _statusFilter);
     setState(() {});
   }
 
@@ -82,7 +83,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete customer?'),
-        content: Text('Soft-delete ${c.name} — ${c.village}?'),
+        content: Text('Soft-delete ${c.name}${c.village?.isNotEmpty == true ? ' — ${c.village}' : ''}?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -125,11 +126,24 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     onChanged: _onSearchChanged,
                     decoration: const InputDecoration(
                       hintText:
-                          'Search by name, mobile, consumer #, or village',
+                          'Search by name, mobile, consumer # or city',
                       prefixIcon: Icon(Icons.search, size: 18),
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(width: DT.s12),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'active', label: Text('Active')),
+                  ButtonSegment(value: 'inactive', label: Text('Inactive')),
+                ],
+                selected: {_statusFilter},
+                onSelectionChanged: (s) {
+                  _statusFilter = s.first;
+                  _page = 1;
+                  _load();
+                },
               ),
               const SizedBox(width: DT.s12),
               ElevatedButton.icon(
@@ -184,7 +198,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               dataRowMaxHeight: DT.rowHeight,
                               columns: const [
                                 DataColumn(label: Text('Name')),
-                                DataColumn(label: Text('Village')),
                                 DataColumn(label: Text('Mobile')),
                                 DataColumn(label: Text('Consumer #')),
                                 DataColumn(label: Text('DO')),
@@ -202,10 +215,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                     DataCell(Text(c.name,
                                         style: const TextStyle(
                                             fontWeight: FontWeight.w500))),
-                                    DataCell(Text(c.village)),
                                     DataCell(Text(c.mobile,
                                         style: AppTheme.mono(size: 12))),
-                                    DataCell(Text(c.consumerNumber,
+                                    DataCell(Text(c.consumerNumber ?? '',
                                         style: AppTheme.mono(size: 12))),
                                     DataCell(Text(
                                         c.distributorOutlet?.code ?? '',

@@ -18,12 +18,11 @@ from app.schemas.customer import (
 from app.utils.audit import write_audit
 
 
-def _check_mobile_village_unique(
-    db: Session, mobile: str, village: str, exclude_id: Optional[int] = None
+def _check_mobile_unique(
+    db: Session, mobile: str, exclude_id: Optional[int] = None
 ) -> None:
     stmt = select(Customer).where(
         Customer.mobile == mobile,
-        Customer.village == village,
         Customer.is_deleted.is_(False),
     )
     if exclude_id:
@@ -31,13 +30,15 @@ def _check_mobile_village_unique(
     if db.scalar(stmt):
         raise HTTPException(
             status_code=400,
-            detail=f"Customer already exists with mobile {mobile} in {village}",
+            detail=f"Customer already exists with mobile {mobile}",
         )
 
 
 def _check_consumer_number_unique(
-    db: Session, consumer_number: str, exclude_id: Optional[int] = None
+    db: Session, consumer_number: Optional[str], exclude_id: Optional[int] = None
 ) -> None:
+    if not consumer_number:
+        return
     stmt = select(Customer).where(
         Customer.consumer_number == consumer_number,
         Customer.is_deleted.is_(False),
@@ -61,7 +62,7 @@ def _validate_do(db: Session, do_id: int) -> DistributorOutlet:
 
 
 def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Customer:
-    _check_mobile_village_unique(db, payload.mobile, payload.village)
+    _check_mobile_unique(db, payload.mobile)
     _check_consumer_number_unique(db, payload.consumer_number)
     _validate_do(db, payload.do_id)
 
@@ -115,10 +116,8 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate, user
     cust = get_customer(db, customer_id)
     data = payload.model_dump(exclude_unset=True)
 
-    if "mobile" in data or "village" in data:
-        new_mobile = data.get("mobile", cust.mobile)
-        new_village = data.get("village", cust.village)
-        _check_mobile_village_unique(db, new_mobile, new_village, exclude_id=cust.id)
+    if "mobile" in data and data["mobile"] != cust.mobile:
+        _check_mobile_unique(db, data["mobile"], exclude_id=cust.id)
 
     if "consumer_number" in data and data["consumer_number"] != cust.consumer_number:
         _check_consumer_number_unique(db, data["consumer_number"], exclude_id=cust.id)
@@ -254,32 +253,28 @@ def import_customers_from_excel(
         try:
             name = str(row.get("Name", "") or "").strip()
             mobile = str(row.get("Mobile", "") or "").strip()
-            village = str(row.get("Village", "") or "").strip()
+            village = str(row.get("Village", "") or "").strip() or None
             city = str(row.get("City", "") or "").strip()
-            consumer_number = str(row.get("Consumer_Number", "") or "").strip()
-            if not name or not mobile or not village:
-                raise ValueError("Name, Mobile and Village are required")
+            consumer_number = str(row.get("Consumer_Number", "") or "").strip() or None
+            if not name or not mobile:
+                raise ValueError("Name and Mobile are required")
             if not mobile.isdigit() or len(mobile) < 10:
                 raise ValueError("Mobile must be 10+ digits")
-            if not consumer_number:
-                # auto-generate a placeholder the owner can edit later
-                consumer_number = f"TEMP-{mobile}"
 
             ctype_raw = (str(row.get("Type", "") or "domestic")).strip().lower()
             ctype = CustomerType.COMMERCIAL if ctype_raw.startswith("c") else CustomerType.DOMESTIC
             op_bal = Decimal(str(row.get("Opening_Balance", 0) or 0))
             op_bot = int(row.get("Opening_Bottles", 0) or 0)
 
-            # skip if duplicate mobile+village OR duplicate consumer_number
+            # skip if duplicate mobile OR duplicate consumer_number
             exists = db.scalar(select(Customer).where(
                 Customer.mobile == mobile,
-                Customer.village == village,
                 Customer.is_deleted.is_(False),
             ))
             if exists:
                 skipped += 1
                 continue
-            if db.scalar(select(Customer).where(
+            if consumer_number and db.scalar(select(Customer).where(
                 Customer.consumer_number == consumer_number,
                 Customer.is_deleted.is_(False),
             )):
@@ -289,7 +284,7 @@ def import_customers_from_excel(
             cust = Customer(
                 consumer_number=consumer_number,
                 do_id=fallback_do.id,
-                name=name, mobile=mobile, village=village, city=city or village,
+                name=name, mobile=mobile, village=village, city=city or village or "—",
                 customer_type=ctype, registration_date=date.today(),
                 opening_balance=op_bal, opening_empty_bottles=op_bot,
                 current_balance=op_bal, current_empty_bottles=op_bot,

@@ -110,6 +110,21 @@ class BillRepo {
     return List<int>.from(bytes as List);
   }
 
+  Future<String> nextBillNumber({DateTime? billDate}) async {
+    final data = await _api.request(
+      'GET',
+      '/bills/next-number',
+      query: {
+        if (billDate != null)
+          'bill_date': billDate.toIso8601String().split('T').first,
+      },
+    );
+    if (data is Map && data['bill_number'] != null) {
+      return data['bill_number'].toString();
+    }
+    return '';
+  }
+
   Future<Map<String, dynamic>?> dashboard() async {
     final data = await _api.request('GET', '/reports/dashboard');
     if (data is Map) return Map<String, dynamic>.from(data);

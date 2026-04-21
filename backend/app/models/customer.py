@@ -26,7 +26,7 @@ class Customer(Base, TimestampMixin):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    consumer_number: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    consumer_number: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True, index=True)
 
     do_id: Mapped[int] = mapped_column(
         ForeignKey("distributor_outlets.id", ondelete="RESTRICT"),
@@ -37,7 +37,7 @@ class Customer(Base, TimestampMixin):
     mobile: Mapped[str] = mapped_column(String(15), nullable=False, index=True)
     alternate_mobile: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
 
-    village: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    village: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     city: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="Gujarat")
@@ -81,8 +81,6 @@ class Customer(Base, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("mobile", "village", name="uq_customer_mobile_village"),
-        Index("ix_customers_name_village", "name", "village"),
         Index("ix_customers_status_deleted", "status", "is_deleted"),
         Index("ix_customers_mobile_deleted", "mobile", "is_deleted"),
     )

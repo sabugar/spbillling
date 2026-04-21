@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format/inr.dart';
@@ -42,15 +43,38 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
   final List<BillItemDraft> _items = [];
   bool _saving = false;
   String? _error;
+  String _nextBillNumber = '';
 
   @override
   void initState() {
     super.initState();
     _loadVariants();
+    _refreshNextBillNumber();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKey);
+  }
+
+  bool _handleGlobalKey(KeyEvent event) {
+    if (!mounted) return false;
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+      return false;
+    }
+    if (_saving) return true;
+    _save();
+    return true; // consume so TextFields don't also process it
+  }
+
+  Future<void> _refreshNextBillNumber() async {
+    try {
+      final n = await ref.read(billRepoProvider).nextBillNumber(billDate: _billDate);
+      if (mounted) setState(() => _nextBillNumber = n);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
     _debounce?.cancel();
     _searchCtrl.dispose();
     _discountCtrl.dispose();
@@ -131,7 +155,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
         final r = await ref.read(customerRepoProvider).search(q);
         if (mounted) {
           setState(() {
-            _results = r;
+            _results = r.where((c) => c.status == 'active').toList();
             _searchedOnce = true;
             _lastSearchQuery = q;
           });
@@ -157,7 +181,8 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
         _selectedCustomer = saved;
         _results = [];
         _searchedOnce = false;
-        _searchCtrl.text = '${saved.name} — ${saved.village}';
+        _searchCtrl.text =
+            '${saved.name}${saved.village?.isNotEmpty == true ? ' — ${saved.village}' : ''}';
       });
     }
   }
@@ -210,28 +235,23 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (d != null) setState(() => _billDate = d);
+    if (d != null) {
+      setState(() => _billDate = d);
+      _refreshNextBillNumber();
+    }
   }
 
   void _resetForNextBill() {
+    // Keep items, payment values, notes — only clear the customer.
     setState(() {
-      _items.clear();
       _selectedCustomer = null;
       _results = [];
       _searchedOnce = false;
       _lastSearchQuery = '';
       _searchCtrl.clear();
-      _discountCtrl.text = '0';
-      _paidCtrl.text = '0';
-      _notesCtrl.clear();
-      _chequeNum.clear();
-      _chequeBank.clear();
-      _chequeDate = DateTime.now();
-      _billDate = DateTime.now();
-      _paymentMode = 'cash';
       _error = null;
     });
-    _seedDefaultRowIfEmpty();
+    _refreshNextBillNumber();
     _searchFocus.requestFocus();
   }
 
@@ -383,12 +403,17 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                         itemBuilder: (_, i) {
                           final c = _results[i];
                           final doCode = c.distributorOutlet?.code ?? '';
+                          final village = c.village;
+                          final cn = c.consumerNumber;
+                          final villageSuffix = village?.isNotEmpty == true
+                              ? ' — $village'
+                              : '';
                           return ListTile(
                             dense: true,
                             title: Text(
-                                '${c.name} — ${c.village}${doCode.isEmpty ? '' : '  ·  DO $doCode'}'),
+                                '${c.name}$villageSuffix${doCode.isEmpty ? '' : '  ·  DO $doCode'}'),
                             subtitle: Text(
-                              '${c.mobile}${c.consumerNumber.isEmpty ? '' : '  ·  ${c.consumerNumber}'}',
+                              '${c.mobile}${cn?.isNotEmpty == true ? '  ·  $cn' : ''}',
                               style:
                                   AppTheme.mono(size: 11, color: DT.text2),
                             ),
@@ -396,7 +421,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                               _selectedCustomer = c;
                               _results = [];
                               _searchedOnce = false;
-                              _searchCtrl.text = '${c.name} — ${c.village}';
+                              _searchCtrl.text = '${c.name}$villageSuffix';
                             }),
                           );
                         },
@@ -453,7 +478,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                            '${_selectedCustomer!.name} — ${_selectedCustomer!.village}',
+                            '${_selectedCustomer!.name}${_selectedCustomer!.village?.isNotEmpty == true ? ' — ${_selectedCustomer!.village}' : ''}',
                             style: const TextStyle(
                                 fontWeight: FontWeight.w600)),
                       ),
@@ -467,7 +492,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                     ],
                   ),
                   Text(
-                    '${_selectedCustomer!.mobile}  ·  ${_selectedCustomer!.consumerNumber}${_selectedCustomer!.distributorOutlet == null ? '' : '  ·  DO ${_selectedCustomer!.distributorOutlet!.code}'}',
+                    '${_selectedCustomer!.mobile}${_selectedCustomer!.consumerNumber?.isNotEmpty == true ? '  ·  ${_selectedCustomer!.consumerNumber}' : ''}${_selectedCustomer!.distributorOutlet == null ? '' : '  ·  DO ${_selectedCustomer!.distributorOutlet!.code}'}',
                     style: AppTheme.mono(size: 11, color: DT.text2),
                   ),
                   const SizedBox(height: DT.s8),
@@ -651,8 +676,30 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Summary',
-                style: Theme.of(context).textTheme.headlineMedium),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('Summary',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const Spacer(),
+                if (_nextBillNumber.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: DT.s8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: DT.brand50,
+                      borderRadius: BorderRadius.circular(DT.rXs),
+                    ),
+                    child: Text(
+                      '# $_nextBillNumber',
+                      style: AppTheme.mono(
+                          size: 11,
+                          weight: FontWeight.w700,
+                          color: DT.brand800),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: DT.s12),
             _sumRow('Subtotal (excl GST)', fmtINR(_subtotal)),
             _sumRow('GST', fmtINR(_gst)),

@@ -46,6 +46,17 @@ def create_bill(payload: BillCreate, db: Session = Depends(get_db),
     return APIResponse(data=BillOut.model_validate(bill), message="Bill created")
 
 
+@router.get("/next-number", response_model=APIResponse[dict])
+def next_bill_number(
+    bill_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    bd = bill_date or date.today()
+    number = billing_service._next_bill_number(db, bd)
+    return APIResponse(data={"bill_number": number, "bill_date": bd.isoformat()})
+
+
 @router.get("/{bill_id}", response_model=APIResponse[BillOut])
 def get_bill(bill_id: int, db: Session = Depends(get_db),
              _user: User = Depends(get_current_user)):

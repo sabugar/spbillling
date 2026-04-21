@@ -17,13 +17,13 @@ int _asInt(dynamic v) {
 
 class Customer {
   final int id;
-  final String consumerNumber;
+  final String? consumerNumber;
   final int doId;
   final DistributorOutlet? distributorOutlet;
   final String name;
   final String mobile;
   final String? altMobile;
-  final String village;
+  final String? village;
   final String? city;
   final String? district;
   final String? state;
@@ -38,13 +38,13 @@ class Customer {
 
   Customer({
     required this.id,
-    required this.consumerNumber,
+    this.consumerNumber,
     required this.doId,
     this.distributorOutlet,
     required this.name,
     required this.mobile,
     this.altMobile,
-    required this.village,
+    this.village,
     this.city,
     this.district,
     this.state,
@@ -60,7 +60,7 @@ class Customer {
 
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
         id: j['id'] as int,
-        consumerNumber: j['consumer_number'] as String? ?? '',
+        consumerNumber: j['consumer_number'] as String?,
         doId: _asInt(j['do_id']),
         distributorOutlet: j['distributor_outlet'] != null
             ? DistributorOutlet.fromJson(
@@ -70,7 +70,7 @@ class Customer {
         mobile: j['mobile'] as String,
         altMobile:
             (j['alternate_mobile'] ?? j['alt_mobile']) as String?,
-        village: j['village'] as String,
+        village: j['village'] as String?,
         city: j['city'] as String?,
         district: j['district'] as String?,
         state: j['state'] as String?,
@@ -86,14 +86,16 @@ class Customer {
       );
 
   Map<String, dynamic> toCreateJson() => {
-        'consumer_number': consumerNumber,
+        if (consumerNumber?.isNotEmpty == true) 'consumer_number': consumerNumber,
         'do_id': doId,
         'name': name,
         'mobile': mobile,
         if (altMobile?.isNotEmpty == true) 'alternate_mobile': altMobile,
-        'village': village,
-        // Backend requires city (NOT NULL). Seed to village as fallback.
-        'city': (city?.isNotEmpty == true) ? city : village,
+        if (village?.isNotEmpty == true) 'village': village,
+        // Backend requires city (NOT NULL). Fall back to village or '-'.
+        'city': (city?.isNotEmpty == true)
+            ? city
+            : (village?.isNotEmpty == true ? village : '-'),
         if (district?.isNotEmpty == true) 'district': district,
         if (state?.isNotEmpty == true) 'state': state,
         if (pincode?.isNotEmpty == true) 'pincode': pincode,

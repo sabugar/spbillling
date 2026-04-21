@@ -51,4 +51,12 @@ class ProductRepo {
     final data = await _api.request('PUT', '/products/variants/$id', data: body);
     return ProductVariant.fromJson(Map<String, dynamic>.from(data as Map));
   }
+
+  Future<void> deleteVariant(int id) async {
+    await _api.request('DELETE', '/products/variants/$id');
+  }
+
+  Future<ProductVariant> setVariantActive(int id, bool active) async {
+    return updateVariant(id, {'is_active': active});
+  }
 }
