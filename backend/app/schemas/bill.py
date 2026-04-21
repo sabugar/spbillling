@@ -82,8 +82,8 @@ class BillCustomerMini(BaseModel):
 
     id: int
     name: str
-    village: str
-    consumer_number: str
+    village: Optional[str] = None
+    consumer_number: Optional[str] = None
     distributor_outlet: Optional[DOSearchResult] = None
 
 

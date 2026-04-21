@@ -40,7 +40,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       final cats = await repo.listCategories();
       final prods = await repo.listProducts();
       // Load all variants (active + inactive), filter client-side by toggle.
-      final vars = await repo.listVariants(perPage: 200);
+      final vars = await repo.listVariants(perPage: 200, includeInactive: true);
       setState(() {
         _categories = cats;
         _products = prods;

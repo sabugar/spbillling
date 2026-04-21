@@ -41,14 +41,36 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
     super.dispose();
   }
 
+  static String _fyPrefix(DateTime d) {
+    final start = d.month >= 4 ? d.year % 100 : (d.year - 1) % 100;
+    final end = d.month >= 4 ? (d.year + 1) % 100 : d.year % 100;
+    return '${start.toString().padLeft(2, '0')}-${end.toString().padLeft(2, '0')}';
+  }
+
+  String _normalizeBillNumber(String raw, DateTime refDate) {
+    final v = raw.trim().toUpperCase();
+    if (v.isEmpty) return '';
+    final fy = _fyPrefix(refDate);
+    if (RegExp(r'^\d+$').hasMatch(v)) {
+      return 'BILL/$fy/${v.padLeft(4, '0')}';
+    }
+    final parts = v.split('/');
+    if (parts.length == 3 && RegExp(r'^\d+$').hasMatch(parts[2])) {
+      return '${parts[0]}/${parts[1]}/${parts[2].padLeft(4, '0')}';
+    }
+    return v;
+  }
+
   void _load() {
+    final fromRef = _fromDate ?? DateTime.now();
+    final toRef = _toDate ?? DateTime.now();
     _future = ref.read(billRepoProvider).list(
           page: _page,
           perPage: 25,
           fromDate: _fromDate,
           toDate: _toDate,
-          billNumberFrom: _billNumFromCtrl.text.trim(),
-          billNumberTo: _billNumToCtrl.text.trim(),
+          billNumberFrom: _normalizeBillNumber(_billNumFromCtrl.text, fromRef),
+          billNumberTo: _normalizeBillNumber(_billNumToCtrl.text, toRef),
         );
     setState(() {});
   }
@@ -245,14 +267,28 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
               width: 180,
               child: TextField(
                 controller: _billNumFromCtrl,
-                decoration: const InputDecoration(labelText: 'Bill # from'),
+                decoration: const InputDecoration(
+                  labelText: 'Bill # from',
+                  hintText: 'e.g. 1 or 0001',
+                ),
+                onSubmitted: (_) {
+                  _page = 1;
+                  _load();
+                },
               ),
             ),
             SizedBox(
               width: 180,
               child: TextField(
                 controller: _billNumToCtrl,
-                decoration: const InputDecoration(labelText: 'Bill # to'),
+                decoration: const InputDecoration(
+                  labelText: 'Bill # to',
+                  hintText: 'e.g. 50',
+                ),
+                onSubmitted: (_) {
+                  _page = 1;
+                  _load();
+                },
               ),
             ),
             ElevatedButton.icon(

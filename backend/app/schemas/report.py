@@ -33,7 +33,7 @@ class OutstandingRow(BaseModel):
     customer_id: int
     customer_name: str
     mobile: str
-    village: str
+    village: Optional[str] = None
     current_balance: Decimal
     current_empty_bottles: int
 
@@ -48,7 +48,7 @@ class EmptyBottleRow(BaseModel):
     customer_id: int
     customer_name: str
     mobile: str
-    village: str
+    village: Optional[str] = None
     empty_bottles: int
 
 

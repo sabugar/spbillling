@@ -20,12 +20,21 @@ class ProductRepo {
         .toList();
   }
 
-  Future<List<ProductVariant>> listVariants({int page = 1, int perPage = 200, String? q, bool? active}) async {
+  Future<List<ProductVariant>> listVariants({
+    int page = 1,
+    int perPage = 200,
+    String? q,
+    bool? active,
+    bool includeInactive = false,
+  }) async {
     final env = await _api.requestEnvelope('GET', '/products/variants/list', query: {
       'page': page,
       'per_page': perPage,
       if (q != null && q.isNotEmpty) 'q': q,
-      if (active != null) 'is_active': active,
+      // Backend param is `include_inactive`. If caller explicitly asks for
+      // active-only, we still pass include_inactive=false. If caller asks for
+      // inactive too, pass include_inactive=true.
+      'include_inactive': includeInactive || active == false,
     });
     return (env['data'] as List)
         .map((e) => ProductVariant.fromJson(Map<String, dynamic>.from(e as Map)))
