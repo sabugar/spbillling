@@ -73,6 +73,8 @@ class BillRepo {
     String? billNumberFrom,
     String? billNumberTo,
     String? status,
+    int? doId,
+    String? city,
   }) async {
     String? d(DateTime? v) => v?.toIso8601String().split('T').first;
     final env = await _api.requestEnvelope('GET', '/bills', query: {
@@ -86,6 +88,8 @@ class BillRepo {
       if (billNumberTo != null && billNumberTo.isNotEmpty)
         'bill_number_to': billNumberTo,
       if (status != null && status.isNotEmpty) 'status': status,
+      if (doId != null) 'do_id': doId,
+      if (city != null && city.isNotEmpty) 'city': city,
     });
     final items = (env['data'] as List)
         .map((e) => Bill.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -117,12 +121,26 @@ class BillRepo {
     required DateTime fromDate,
     required DateTime toDate,
     String format = '9up',
+    int? doId,
+    String? city,
+    String? billNumberFrom,
+    String? billNumberTo,
   }) async {
     String d(DateTime v) => v.toIso8601String().split('T').first;
     final bytes = await _api.request(
       'GET',
       '/bills/print/batch',
-      query: {'from': d(fromDate), 'to': d(toDate), 'format': format},
+      query: {
+        'from': d(fromDate),
+        'to': d(toDate),
+        'format': format,
+        if (doId != null) 'do_id': doId,
+        if (city != null && city.isNotEmpty) 'city': city,
+        if (billNumberFrom != null && billNumberFrom.isNotEmpty)
+          'bill_number_from': billNumberFrom,
+        if (billNumberTo != null && billNumberTo.isNotEmpty)
+          'bill_number_to': billNumberTo,
+      },
       responseType: ResponseType.bytes,
     );
     return List<int>.from(bytes as List);

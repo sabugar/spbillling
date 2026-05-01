@@ -1,6 +1,7 @@
+import os
 from decimal import Decimal
 from io import BytesIO
-from typing import Iterable
+from typing import Iterable, Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -128,13 +129,202 @@ COLS = 3
 ROWS = 3
 
 
-def render_bills_9up_pdf(db: Session, bills: Iterable[Bill]) -> bytes:
+# =============================================================================
+# SP Gas Agency full bill template — replicates the printed stationery
+# entirely (logo, header, address bar, all labels + boxes + GST IN footer)
+# AND fills in the per-bill data. Used for both single-bill PDF and 6-up
+# batch PDF. Logical bill is 95×92mm at scale=1; pass scale=2 for full A4
+# single bill.
+# =============================================================================
+
+
+def _split_rs_ps(amount: Decimal) -> tuple[str, str]:
+    """Split a decimal amount into (rupees_str, paisa_str_2digits)."""
+    q = amount.quantize(Decimal("0.01"))
+    rs = int(q)
+    ps = int((q - rs) * 100)
+    return str(rs), f"{ps:02d}"
+
+
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
+_LOGO_PATH = os.path.join(_ASSETS_DIR, "reliance_gas_logo.png")
+_SIGN_PATH = os.path.join(_ASSETS_DIR, "signature.png")
+
+
+def _short_bill_no(num: str) -> str:
+    """Strip the 'BILL/26-27/' prefix — keep only the trailing serial."""
+    return num.rsplit("/", 1)[-1] if num and "/" in num else (num or "")
+
+
+def _do_name_code(customer: Optional[Customer]) -> str:
+    """Build the DO Name & Code string from the customer's distributor outlet.
+    Format: 'OwnerName / CODE' (e.g., 'SP Gas / ZM')."""
+    if not customer:
+        return ""
+    do = getattr(customer, "distributor_outlet", None)
+    if not do:
+        return ""
+    if do.owner_name and do.code:
+        return f"{do.owner_name} / {do.code}"
+    return do.owner_name or do.code or ""
+
+
+def _customer_address(customer: Optional[Customer]) -> str:
+    if not customer:
+        return ""
+    if customer.full_address:
+        return customer.full_address
+    parts = [p for p in (customer.village, customer.city) if p]
+    return ", ".join(parts)
+
+
+def _draw_sp_bill_template(c: canvas.Canvas, bill: Bill,
+                           bx_mm: float, by_mm: float, scale: float = 1.0) -> None:
+    """Draw one complete SP Gas Agency bill (template + data) at (bx, by) mm.
+
+    Logical bill is 95×92mm; pass scale=2 for ~190×184mm (full A4 single).
+    """
+    customer = bill.customer
+
+    def to_pdf(lx: float, ly: float) -> tuple[float, float]:
+        abs_x_mm = bx_mm + lx * scale
+        abs_y_top_mm = by_mm + ly * scale
+        return abs_x_mm * mm, (297 - abs_y_top_mm) * mm
+
+    def text(lx: float, ly: float, s: str,
+             font: str = "Helvetica", size: float = 8.0,
+             color: tuple = (0, 0, 0), align: str = "left") -> None:
+        c.setFont(font, size * scale)
+        c.setFillColorRGB(*color)
+        x, y = to_pdf(lx, ly)
+        if align == "right":
+            c.drawRightString(x, y, s)
+        elif align == "center":
+            c.drawCentredString(x, y, s)
+        else:
+            c.drawString(x, y, s)
+
+    def rect_box(lx1: float, ly1: float, lx2: float, ly2: float,
+                 stroke: int = 1, fill: int = 0,
+                 fill_rgb: Optional[tuple] = None,
+                 stroke_rgb: tuple = (0, 0, 0), line_w: float = 0.4) -> None:
+        if fill_rgb:
+            c.setFillColorRGB(*fill_rgb)
+        c.setStrokeColorRGB(*stroke_rgb)
+        c.setLineWidth(line_w * scale)
+        x1, y1 = to_pdf(lx1, ly1)
+        x2, y2 = to_pdf(lx2, ly2)
+        c.rect(x1, y2, x2 - x1, y1 - y2, stroke=stroke, fill=fill)
+
+    def hline(lx1: float, ly: float, lx2: float, line_w: float = 0.3) -> None:
+        c.setStrokeColorRGB(0, 0, 0)
+        c.setLineWidth(line_w * scale)
+        x1, y1 = to_pdf(lx1, ly)
+        x2, y2 = to_pdf(lx2, ly)
+        c.line(x1, y1, x2, y2)
+
+    def img(local_path: str, lx1: float, ly1: float, lx2: float, ly2: float) -> None:
+        if not os.path.exists(local_path):
+            return
+        x1, y1 = to_pdf(lx1, ly1)
+        x2, y2 = to_pdf(lx2, ly2)
+        c.drawImage(local_path, x1, y2, x2 - x1, y1 - y2,
+                    preserveAspectRatio=True, anchor="c", mask="auto")
+
+    # ---------- Outer border ----------
+    rect_box(0, 0, 95, 92, line_w=0.6)
+
+    # ---------- Header (Y 0–19) ----------
+    # Reliance Gas logo (real image)
+    img(_LOGO_PATH, 1, 1, 18, 18.5)
+
+    # Tax Invoice tag (top-right, plain text — no black bg)
+    text(94, 3, "Tax Invoice", font="Helvetica", size=7, align="right")
+
+    # Agency name + subtitle (centered between logo and right edge)
+    text(56, 9, "S. P. GAS AGENCY", font="Helvetica-Bold", size=13, align="center")
+    text(56, 14.5, "AUTHORISED DISTRIBUTORS", font="Helvetica-Bold", size=7,
+         align="center")
+
+    # ---------- Address bar (Y 19–25) — plain text, no black bg ----------
+    hline(0, 19, 95, line_w=0.4)
+    text(2, 23, "Nr. Hathmati Bridge, Idar Highway Road, Himatnagar-383 001.",
+         font="Helvetica-Bold", size=7)
+    hline(0, 25, 95, line_w=0.4)
+
+    # ---------- DO Name & Code (Y 25–37) ----------
+    text(1.5, 30, "DO Name", font="Helvetica", size=7)
+    text(1.5, 33.5, "& Code", font="Helvetica", size=7)
+    text(20, 32.5, _do_name_code(customer), font="Helvetica-Bold", size=8)
+    hline(0, 37, 95)
+
+    # ---------- Bill No / Date (Y 37–46) ----------
+    text(1.5, 42, "Bill No. :", font="Helvetica", size=7)
+    text(15, 42, _short_bill_no(bill.bill_number), font="Helvetica-Bold", size=8)
+    text(50, 42, "Date :", font="Helvetica", size=7)
+    text(60, 42, bill.bill_date.strftime("%d-%m-%Y"), font="Helvetica", size=8)
+
+    # ---------- Consumer Name (Y 46–54) ----------
+    text(1.5, 51, "Consumer Name :", font="Helvetica", size=7)
+    text(28, 51, (customer.name if customer else "")[:30],
+         font="Helvetica", size=8)
+
+    # ---------- Consumer number (no label) / Phone (Y 54–62) ----------
+    text(1.5, 59, (customer.consumer_number if customer else "") or "",
+         font="Helvetica-Bold", size=9)
+    text(50, 59, "Phone :", font="Helvetica", size=7)
+    text(62, 59, (customer.mobile if customer else "") or "",
+         font="Helvetica", size=8)
+    hline(0, 62, 95)
+
+    # ---------- PARTICULARS bar (Y 62–67) ----------
+    rect_box(0, 62, 95, 67, stroke=0, fill=1, fill_rgb=(0.93, 0.93, 0.93))
+    text(2, 65.5, "PARTICULARS", font="Helvetica-Bold", size=8)
+    text(89, 65.5, "Rs.", font="Helvetica-Bold", size=7, align="right")
+    hline(0, 67, 95)
+
+    # ---------- Cost of Gas + HSN combined box (Y 67–80) ----------
+    text(1.5, 72, "Cost of Gas 15kg. (Nos. - 1) (SEAL PACK)",
+         font="Helvetica", size=7)
+    total_amount = (bill.total_amount or Decimal("0")).quantize(Decimal("0.01"))
+    text(89, 72, f"{total_amount:.2f}",
+         font="Helvetica-Bold", size=11, align="right")
+    text(1.5, 79, "HSN Code - 2711 19 10", font="Helvetica-Bold", size=6)
+    hline(0, 80, 95)
+
+    # ---------- GST breakdown (Y 80–86): amount + SGST + CGST ----------
+    half = ((bill.gst_amount or Decimal("0")) / Decimal("2")).quantize(Decimal("0.01"))
+    sgst_rs, sgst_ps = _split_rs_ps(half)
+    cgst_rs, cgst_ps = sgst_rs, sgst_ps
+    base_rs, base_ps = _split_rs_ps(bill.subtotal or Decimal("0"))
+    gst_text = (
+        f"Rs. {base_rs}.{base_ps}"
+        f"  +  SGST(5%) {sgst_rs}.{sgst_ps}"
+        f"  +  CGST(5%) {cgst_rs}.{cgst_ps}"
+        f"  =  {total_amount:.2f}"
+    )
+    text(2, 84, gst_text, font="Helvetica-Bold", size=8)
+    hline(0, 86, 95)
+
+    # ---------- Footer (Y 86–92) — GST IN left, signature stack on right ----------
+    text(1.5, 91, "GST IN : 24AAUFS0029D1ZD", font="Helvetica-Bold", size=7)
+    # Right-side stack with padding above/below the texts:
+    # Y 87.0 "For, S. P. GasAgency" → Y 87.5–90.5 sign (right of GST IN)
+    # → Y 91.5 "Auth. Sign"
+    text(94, 87.2, "For, S. P. GasAgency", font="Helvetica-Bold", size=6, align="right")
+    img(_SIGN_PATH, 73, 87.6, 92, 90.6)
+    text(94, 91.5, "Auth. Sign", font="Helvetica-Bold", size=6, align="right")
+
+
+def render_bills_preprinted_overlay_pdf(db: Session, bills: Iterable[Bill]) -> bytes:
+    """Render 6 SP Gas Agency bills per A4 page (2 cols × 3 rows).
+
+    Each bill is fully drawn — logo, header, dark address bar, all labels
+    and boxes — exactly like the pre-printed stationery, with bill data
+    filled into the appropriate boxes.
+    """
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    business = _business_header(db)
-
-    cell_w = (PAGE_W - 2 * MARGIN) / COLS
-    cell_h = (PAGE_H - 2 * MARGIN) / ROWS
 
     bills = list(bills)
     if not bills:
@@ -143,15 +333,87 @@ def render_bills_9up_pdf(db: Session, bills: Iterable[Bill]) -> bytes:
         c.save()
         return buf.getvalue()
 
+    # Grid: 2 cols × 3 rows on A4 (210×297mm). Each slot ~95×92mm.
+    page_margin_x = 8.0   # mm
+    page_margin_y = 8.0   # mm
+    col_gap = 4.0
+    row_gap = 5.0
+    row_tops = [
+        page_margin_y,
+        page_margin_y + 92 + row_gap,
+        page_margin_y + 2 * (92 + row_gap),
+    ]
+    col_lefts = [page_margin_x, page_margin_x + 95 + col_gap]
+
     for index, bill in enumerate(bills):
-        pos = index % (COLS * ROWS)
+        pos = index % 6
         if pos == 0 and index > 0:
             c.showPage()
-        col = pos % COLS
-        row = pos // COLS
-        x = MARGIN + col * cell_w
-        y = PAGE_H - MARGIN - (row + 1) * cell_h
-        _draw_mini_bill(c, db, bill, x, y, cell_w, cell_h, business)
+        col = pos % 2
+        row = pos // 2
+        _draw_sp_bill_template(c, bill, col_lefts[col], row_tops[row], scale=1.0)
+
+    c.save()
+    return buf.getvalue()
+
+
+def render_bill_sp_single_pdf(bill: Bill) -> bytes:
+    """Render a single SP Gas Agency bill on a full A4 page (scaled-up template)."""
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+
+    # scale=2 → 190×184mm bill. Center on A4 (210×297).
+    scale = 2.0
+    bill_w = 95 * scale
+    bill_h = 92 * scale
+    bx = (210 - bill_w) / 2
+    by = (297 - bill_h) / 2 - 20  # nudge up so it sits in the upper portion
+
+    _draw_sp_bill_template(c, bill, bx, by, scale=scale)
+    c.save()
+    return buf.getvalue()
+
+
+def render_bills_9up_pdf(db: Session, bills: Iterable[Bill]) -> bytes:
+    """Render 9 SP Gas Agency bills per A4 page (3 cols × 3 rows).
+
+    Same template as the 6-up output, just scaled down so 9 bills fit on A4.
+    """
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+
+    bills = list(bills)
+    if not bills:
+        c.setFont("Helvetica", 12)
+        c.drawString(MARGIN, PAGE_H - MARGIN - 10, "No bills in the selected range.")
+        c.save()
+        return buf.getvalue()
+
+    # 3×3 grid on A4 (210×297mm). Logical bill is 95×92mm; pick scale so it
+    # fits the cell, then size cells from that scale (no wasted gaps).
+    page_margin_x = 6.0  # mm
+    page_margin_y = 6.0
+    col_gap = 3.0
+    row_gap = 3.0
+    cell_w_mm = (210 - 2 * page_margin_x - 2 * col_gap) / 3   # ≈ 64.7mm
+    cell_h_mm = (297 - 2 * page_margin_y - 2 * row_gap) / 3   # ≈ 93.0mm
+    scale = min(cell_w_mm / 95.0, cell_h_mm / 92.0)
+    bill_w = 95 * scale
+    bill_h = 92 * scale
+
+    col_lefts = [page_margin_x + i * (cell_w_mm + col_gap) for i in range(3)]
+    row_tops = [page_margin_y + i * (cell_h_mm + row_gap) for i in range(3)]
+
+    for index, bill in enumerate(bills):
+        pos = index % 9
+        if pos == 0 and index > 0:
+            c.showPage()
+        col = pos % 3
+        row = pos // 3
+        # Center the bill within its cell
+        bx = col_lefts[col] + (cell_w_mm - bill_w) / 2
+        by = row_tops[row] + (cell_h_mm - bill_h) / 2
+        _draw_sp_bill_template(c, bill, bx, by, scale=scale)
 
     c.save()
     return buf.getvalue()
@@ -181,10 +443,12 @@ def _draw_mini_bill(c, db: Session, bill: Bill, x: float, y: float, w: float, h:
     customer = db.get(Customer, bill.customer_id)
     c.setFont("Helvetica", 8)
     if customer:
-        c.drawString(x + pad, ty, f"{customer.name[:28]} — {customer.village[:14]}")
+        village = (customer.village or "")[:14]
+        sep = " — " if village else ""
+        c.drawString(x + pad, ty, f"{(customer.name or '')[:28]}{sep}{village}")
         ty -= 3 * mm
         c.setFont("Helvetica", 7)
-        c.drawString(x + pad, ty, f"Mob: {customer.mobile}")
+        c.drawString(x + pad, ty, f"Mob: {customer.mobile or ''}")
         ty -= 3 * mm
 
     # items (max 5)

@@ -17,10 +17,21 @@ import '../../core/theme/design_tokens.dart';
 class BillsBatchPdfScreen extends ConsumerStatefulWidget {
   final DateTime fromDate;
   final DateTime toDate;
+  final String format; // '9up' or 'preprinted'
+  final int? doId;
+  final String? city;
+  final String? billNumberFrom;
+  final String? billNumberTo;
+
   const BillsBatchPdfScreen({
     super.key,
     required this.fromDate,
     required this.toDate,
+    this.format = '9up',
+    this.doId,
+    this.city,
+    this.billNumberFrom,
+    this.billNumberTo,
   });
 
   @override
@@ -42,10 +53,17 @@ class _BillsBatchPdfScreenState extends ConsumerState<BillsBatchPdfScreen> {
     final bytes = await ref.read(billRepoProvider).fetchBatchPdfBytes(
           fromDate: widget.fromDate,
           toDate: widget.toDate,
-          format: '9up',
+          format: widget.format,
+          doId: widget.doId,
+          city: widget.city,
+          billNumberFrom: widget.billNumberFrom,
+          billNumberTo: widget.billNumberTo,
         );
     return Uint8List.fromList(bytes);
   }
+
+  String get _label =>
+      widget.format == 'preprinted' ? 'pre-printed 6-up' : '9-up';
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +76,7 @@ class _BillsBatchPdfScreenState extends ConsumerState<BillsBatchPdfScreen> {
           icon: const Icon(Icons.arrow_back, size: 18),
           onPressed: () => context.go('/bills'),
         ),
-        title: Text('Bills $from → $to (9-up)'),
+        title: Text('Bills $from → $to ($_label)'),
       ),
       body: FutureBuilder<Uint8List>(
         future: _future,
@@ -72,12 +90,14 @@ class _BillsBatchPdfScreenState extends ConsumerState<BillsBatchPdfScreen> {
                   style: const TextStyle(color: DT.err700)),
             );
           }
+          final fnameSuffix =
+              widget.format == 'preprinted' ? '-preprinted' : '';
           return PdfPreview(
             build: (_) async => snap.data!,
             canChangePageFormat: false,
             canChangeOrientation: false,
             canDebug: false,
-            pdfFileName: 'bills-$from-to-$to.pdf',
+            pdfFileName: 'bills-$from-to-$to$fnameSuffix.pdf',
           );
         },
       ),

@@ -27,3 +27,7 @@ final customerRepoProvider = Provider<CustomerRepo>((ref) => CustomerRepo(ref.wa
 final productRepoProvider = Provider<ProductRepo>((ref) => ProductRepo(ref.watch(apiClientProvider)));
 final billRepoProvider = Provider<BillRepo>((ref) => BillRepo(ref.watch(apiClientProvider)));
 final doRepoProvider = Provider<DORepo>((ref) => DORepo(ref.watch(apiClientProvider)));
+
+/// Bumped by Products screen on any product/variant save/delete; watched by
+/// NewBill screen to know when to reload its cached variants list.
+final productCatalogVersionProvider = StateProvider<int>((ref) => 0);

@@ -221,7 +221,7 @@ def search_customers(db: Session, q: str, limit: int = 20) -> list[Customer]:
 
 
 # --------- Excel import/export ---------
-IMPORT_HEADERS = ["Name", "Mobile", "Village", "City", "Type", "Opening_Balance", "Opening_Bottles"]
+IMPORT_HEADERS = ["Name", "Mobile", "DO", "Village", "City", "Type", "Opening_Balance", "Opening_Bottles"]
 
 
 def import_customers_from_excel(
@@ -238,15 +238,18 @@ def import_customers_from_excel(
     imported = 0
     skipped = 0
 
-    # All imports bind to the first active DO as a fallback (owner can reassign later)
-    fallback_do = db.scalar(
+    # Build a code → DO map for lookups; first active DO is the fallback when
+    # the row leaves the DO column blank.
+    active_dos = list(db.scalars(
         select(DistributorOutlet).where(
             DistributorOutlet.is_deleted.is_(False),
             DistributorOutlet.is_active.is_(True),
         ).order_by(DistributorOutlet.id.asc())
-    )
-    if not fallback_do:
+    ).all())
+    if not active_dos:
         raise HTTPException(status_code=400, detail="No active Distributor Outlet exists. Create one before importing.")
+    do_by_code = {d.code.upper(): d for d in active_dos}
+    fallback_do = active_dos[0]
 
     for idx, raw in enumerate(rows[1:], start=2):
         row = {headers[i]: (raw[i] if i < len(raw) else None) for i in range(len(headers))}
@@ -260,6 +263,19 @@ def import_customers_from_excel(
                 raise ValueError("Name and Mobile are required")
             if not mobile.isdigit() or len(mobile) < 10:
                 raise ValueError("Mobile must be 10+ digits")
+
+            # DO column: accept "DO" or "DO_Code" header. Empty → fallback DO.
+            do_raw = (row.get("DO") or row.get("DO_Code") or "")
+            do_code = str(do_raw).strip().upper()
+            if do_code:
+                do = do_by_code.get(do_code)
+                if not do:
+                    raise ValueError(
+                        f"DO code '{do_code}' not found (active codes: "
+                        f"{', '.join(sorted(do_by_code.keys()))})"
+                    )
+            else:
+                do = fallback_do
 
             ctype_raw = (str(row.get("Type", "") or "domestic")).strip().lower()
             ctype = CustomerType.COMMERCIAL if ctype_raw.startswith("c") else CustomerType.DOMESTIC
@@ -283,7 +299,7 @@ def import_customers_from_excel(
 
             cust = Customer(
                 consumer_number=consumer_number,
-                do_id=fallback_do.id,
+                do_id=do.id,
                 name=name, mobile=mobile, village=village, city=city or village or "—",
                 customer_type=ctype, registration_date=date.today(),
                 opening_balance=op_bal, opening_empty_bottles=op_bot,

@@ -111,16 +111,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   Future<void> _delete(ProductVariant v) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Delete variant?'),
         content: Text(
             'Delete "${v.name}"? This deactivates it (kept in history).'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
               style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
               child: const Text('Delete')),
         ],
@@ -129,6 +129,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     if (ok != true) return;
     try {
       await ref.read(productRepoProvider).deleteVariant(v.id);
+      ref.read(productCatalogVersionProvider.notifier).state++;
       _loadAll();
     } catch (e) {
       _snack(e.toString());
@@ -371,7 +372,7 @@ Future<String?> _promptText(BuildContext context, String title) async {
   final ctrl = TextEditingController();
   final ok = await showDialog<bool>(
     context: context,
-    builder: (_) => AlertDialog(
+    builder: (dialogCtx) => AlertDialog(
       title: Text(title),
       content: TextField(
         controller: ctrl,
@@ -380,11 +381,11 @@ Future<String?> _promptText(BuildContext context, String title) async {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(dialogCtx).pop(false),
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () => Navigator.of(dialogCtx).pop(true),
           child: const Text('Save'),
         ),
       ],
@@ -489,6 +490,8 @@ class _VariantFormDialogState extends ConsumerState<_VariantFormDialog> {
           'is_active': true,
         });
       }
+      // Bump catalog version so NewBill picks up the change next time it builds.
+      ref.read(productCatalogVersionProvider.notifier).state++;
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {

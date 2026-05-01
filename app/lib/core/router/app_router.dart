@@ -53,10 +53,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/bills/batch-print',
         builder: (_, s) {
-          // Query params are ISO-8601 date strings (yyyy-MM-dd).
-          final from = DateTime.parse(s.uri.queryParameters['from']!);
-          final to = DateTime.parse(s.uri.queryParameters['to']!);
-          return BillsBatchPdfScreen(fromDate: from, toDate: to);
+          final qp = s.uri.queryParameters;
+          final from = DateTime.parse(qp['from']!);
+          final to = DateTime.parse(qp['to']!);
+          final format = qp['format'] ?? '9up';
+          final doId = int.tryParse(qp['do_id'] ?? '');
+          final city = qp['city'];
+          final bnFrom = qp['bill_number_from'];
+          final bnTo = qp['bill_number_to'];
+          return BillsBatchPdfScreen(
+            fromDate: from,
+            toDate: to,
+            format: format,
+            doId: doId,
+            city: (city == null || city.isEmpty) ? null : city,
+            billNumberFrom: (bnFrom == null || bnFrom.isEmpty) ? null : bnFrom,
+            billNumberTo: (bnTo == null || bnTo.isEmpty) ? null : bnTo,
+          );
         },
       ),
       // Main app shell — sidebar + top bar wrap every child page.

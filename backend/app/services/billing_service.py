@@ -176,6 +176,8 @@ def list_bills(
     status: Optional[BillStatus] = None,
     bill_number_from: Optional[str] = None,
     bill_number_to: Optional[str] = None,
+    do_id: Optional[int] = None,
+    city: Optional[str] = None,
 ):
     stmt = select(Bill).order_by(Bill.bill_date.desc(), Bill.id.desc())
     if customer_id:
@@ -190,6 +192,12 @@ def list_bills(
         stmt = stmt.where(Bill.bill_number >= bill_number_from)
     if bill_number_to:
         stmt = stmt.where(Bill.bill_number <= bill_number_to)
+    if do_id is not None or city:
+        stmt = stmt.join(Customer, Bill.customer_id == Customer.id)
+        if do_id is not None:
+            stmt = stmt.where(Customer.do_id == do_id)
+        if city:
+            stmt = stmt.where(Customer.city.ilike(f"%{city}%"))
     return stmt
 
 

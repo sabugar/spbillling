@@ -33,6 +33,29 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    // Unregister any stale Flutter service worker from a previous build and
+    // clear its caches, then reload once so this load gets fresh files.
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        if (!regs.length) return;
+        var hadSw = regs.some(function (r) { return !!r.active; });
+        Promise.all(regs.map(function (r) { return r.unregister(); })).then(function () {
+          if ('caches' in window) {
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }).then(function () {
+              if (hadSw && !sessionStorage.getItem('__sw_cleared__')) {
+                sessionStorage.setItem('__sw_cleared__', '1');
+                location.reload();
+              }
+            });
+          }
+        });
+      });
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

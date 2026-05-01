@@ -12,7 +12,12 @@ from app.schemas.bill import BillCreate, BillOut, BillSummary, BillUpdate
 from app.schemas.common import APIResponse, PaginatedResponse
 from app.schemas.report import CustomerLedger
 from app.services import billing_service
-from app.services.pdf_service import render_bill_pdf, render_bills_9up_pdf
+from app.services.pdf_service import (
+    render_bill_pdf,
+    render_bill_sp_single_pdf,
+    render_bills_9up_pdf,
+    render_bills_preprinted_overlay_pdf,
+)
 from app.utils.auth import get_current_user, require_admin, require_staff
 from app.utils.pagination import paginate
 
@@ -27,6 +32,8 @@ def list_bills(
     status: Optional[BillStatus] = None,
     bill_number_from: Optional[str] = Query(None),
     bill_number_to: Optional[str] = Query(None),
+    do_id: Optional[int] = Query(None),
+    city: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -35,6 +42,7 @@ def list_bills(
     stmt = billing_service.list_bills(
         db, customer_id=customer_id, from_date=from_date, to_date=to_date, status=status,
         bill_number_from=bill_number_from, bill_number_to=bill_number_to,
+        do_id=do_id, city=city,
     )
     return paginate(db, stmt, page=page, per_page=per_page, item_schema=BillSummary)
 
@@ -82,7 +90,7 @@ def cancel_bill(bill_id: int, db: Session = Depends(get_db),
 def bill_pdf(bill_id: int, db: Session = Depends(get_db),
              _user: User = Depends(get_current_user)):
     bill = billing_service.get_bill(db, bill_id)
-    pdf_bytes = render_bill_pdf(db, bill)
+    pdf_bytes = render_bill_sp_single_pdf(bill)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -94,18 +102,34 @@ def bill_pdf(bill_id: int, db: Session = Depends(get_db),
 def print_batch(
     from_date: date = Query(..., alias="from"),
     to_date: date = Query(..., alias="to"),
-    format: str = Query("9up", pattern="^(9up|single)$"),
+    format: str = Query("9up", pattern="^(9up|single|preprinted)$"),
+    do_id: Optional[int] = Query(None),
+    city: Optional[str] = Query(None),
+    bill_number_from: Optional[str] = Query(None),
+    bill_number_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    stmt = billing_service.list_bills(db, from_date=from_date, to_date=to_date,
-                                       status=BillStatus.CONFIRMED)
+    stmt = billing_service.list_bills(
+        db, from_date=from_date, to_date=to_date,
+        status=BillStatus.CONFIRMED,
+        do_id=do_id, city=city,
+        bill_number_from=bill_number_from, bill_number_to=bill_number_to,
+    )
     bills = list(db.scalars(stmt).all())
-    pdf_bytes = render_bills_9up_pdf(db, bills) if format == "9up" else b""
+    if format == "preprinted":
+        pdf_bytes = render_bills_preprinted_overlay_pdf(db, bills)
+        filename = "bills-preprinted.pdf"
+    elif format == "9up":
+        pdf_bytes = render_bills_9up_pdf(db, bills)
+        filename = "bills.pdf"
+    else:
+        pdf_bytes = b""
+        filename = "bills.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="bills.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

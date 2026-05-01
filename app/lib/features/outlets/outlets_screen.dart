@@ -84,30 +84,38 @@ class _OutletsScreenState extends ConsumerState<OutletsScreen> {
   Future<void> _delete(DistributorOutlet o) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Delete outlet?'),
         content: Text('Delete DO ${o.code} — ${o.ownerName}?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: const Text('Cancel')),
           ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
               child: const Text('Delete')),
         ],
       ),
     );
     if (confirm != true) return;
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(doRepoProvider).delete(o.id);
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('Deleted outlet ${o.code}'),
+        duration: const Duration(seconds: 3),
+        backgroundColor: DT.ok700,
+      ));
       _load();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(e.toString()),
+        duration: const Duration(seconds: 6),
+        backgroundColor: DT.err700,
+      ));
     }
   }
 

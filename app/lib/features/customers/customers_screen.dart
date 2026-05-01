@@ -6,6 +6,7 @@
 //   * per-row Edit, Toggle active, Delete (admin only for toggle+delete);
 //   * "+ New customer" button opens CustomerFormDialog.import 'dart:async';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -93,33 +94,155 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   /// Confirms and soft-deletes the customer. Backend returns an error if
   /// the row still has active bills; that error bubbles up as a snackbar.
   Future<void> _delete(Customer c) async {
-    final confirm = await showDialog<bool>(
+    // Run the DELETE call from inside the dialog button itself so that any
+    // navigator/context oddity around `showDialog` cannot prevent the API
+    // call from going out. Returns: 'ok' | 'err:<message>' | null (cancelled).
+    final outcome = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete customer?'),
-        content: Text('Soft-delete ${c.name}${c.village?.isNotEmpty == true ? ' — ${c.village}' : ''}?'),
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogCtx) {
+        bool busy = false;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: const Text('Delete customer?'),
+            content: Text(
+              'Are you sure you want to delete ${c.name}'
+              '${c.village?.isNotEmpty == true ? ' — ${c.village}' : ''}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.pop(dialogCtx, null),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setLocal(() => busy = true);
+                        try {
+                          await ref.read(customerRepoProvider).delete(c.id);
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'ok');
+                          }
+                        } catch (e) {
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'err:${e.toString()}');
+                          }
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || outcome == null) return;
+    if (outcome == 'ok') {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deleted ${c.name}'),
+        duration: const Duration(seconds: 3),
+        backgroundColor: DT.ok700,
+      ));
+      _load();
+    } else if (outcome.startsWith('err:')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(outcome.substring(4)),
+        duration: const Duration(seconds: 6),
+        backgroundColor: DT.err700,
+      ));
+    }
+  }
+
+  Future<void> _importExcel() async {
+    final XFile? picked = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Excel/CSV', extensions: ['xlsx', 'xls', 'csv']),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+      content: Text('Importing ${picked.name}…'),
+      duration: const Duration(seconds: 30),
+    ));
+    try {
+      final bytes = await picked.readAsBytes();
+      final result = await ref.read(customerRepoProvider).importExcel(
+            bytes: bytes,
+            filename: picked.name,
+          );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      final imported = result['imported'] ?? 0;
+      final skipped = result['skipped'] ?? 0;
+      final errors = (result['errors'] as List?) ?? const [];
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          'Imported $imported · skipped $skipped'
+          '${errors.isNotEmpty ? ' · ${errors.length} errors' : ''}',
+        ),
+        duration: const Duration(seconds: 5),
+        backgroundColor: errors.isEmpty ? DT.ok700 : DT.warn700,
+      ));
+      if (errors.isNotEmpty) {
+        await _showImportErrors(errors);
+      }
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Import failed: ${e.toString()}'),
+        duration: const Duration(seconds: 8),
+        backgroundColor: DT.err700,
+      ));
+    }
+  }
+
+  Future<void> _showImportErrors(List errors) async {
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('${errors.length} row${errors.length == 1 ? '' : 's'} skipped'),
+        content: SizedBox(
+          width: 480,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: errors.length,
+            itemBuilder: (_, i) {
+              final e = errors[i] as Map;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  'Row ${e['row']}: ${e['error']}',
+                  style: const TextStyle(fontSize: DT.fsSm, color: DT.err700),
+                ),
+              );
+            },
+          ),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
-    if (confirm != true) return;
-    try {
-      await ref.read(customerRepoProvider).delete(c.id);
-      _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    }
+
   }
 
   @override
@@ -164,6 +287,12 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                 onPressed: () => _openForm(),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add Customer'),
+              ),
+              const SizedBox(width: DT.s8),
+              OutlinedButton.icon(
+                onPressed: isAdmin ? _importExcel : null,
+                icon: const Icon(Icons.upload_file, size: 16),
+                label: const Text('Upload Excel'),
               ),
             ],
           ),
