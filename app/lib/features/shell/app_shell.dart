@@ -26,6 +26,8 @@ const _entries = [
   _NavEntry('Products', Icons.inventory_2_outlined, '/products'),
   _NavEntry('Bills', Icons.receipt_outlined, '/bills'),
   _NavEntry('New Bill', Icons.receipt_long_outlined, '/bills/new'),
+  _NavEntry('Daily Register', Icons.calendar_month_outlined, '/register/daily'),
+  _NavEntry('DO Register', Icons.assignment_outlined, '/register/do'),
 ];
 
 /// Frames the current page with the persistent sidebar and top bar.

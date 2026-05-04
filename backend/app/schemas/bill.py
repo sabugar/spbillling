@@ -82,6 +82,7 @@ class BillCustomerMini(BaseModel):
 
     id: int
     name: str
+    mobile: Optional[str] = None
     village: Optional[str] = None
     consumer_number: Optional[str] = None
     distributor_outlet: Optional[DOSearchResult] = None

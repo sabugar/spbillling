@@ -1,8 +1,3 @@
-// Full-screen PDF preview for a single saved bill.
-//
-// Fetches the raw PDF bytes from `/api/bills/{id}/pdf` and hands them
-// to the `printing` package's PdfPreview which provides built-in
-// zoom / print / save-as controls.
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -13,7 +8,6 @@ import 'package:printing/printing.dart';
 import '../../core/providers.dart';
 import '../../core/theme/design_tokens.dart';
 
-/// Route `/bills/:id/pdf`. Shows the rendered invoice for [billId].
 class BillPdfScreen extends ConsumerStatefulWidget {
   final int billId;
   const BillPdfScreen({super.key, required this.billId});
@@ -24,6 +18,7 @@ class BillPdfScreen extends ConsumerStatefulWidget {
 
 class _BillPdfScreenState extends ConsumerState<BillPdfScreen> {
   late Future<Uint8List> _future;
+  String _billNumber = '';
 
   @override
   void initState() {
@@ -31,16 +26,28 @@ class _BillPdfScreenState extends ConsumerState<BillPdfScreen> {
     _future = _load();
   }
 
-  /// Downloads the PDF bytes from the backend.
+  static String _shortBillNo(String full) =>
+      full.contains('/') ? full.split('/').last : full;
+
   Future<Uint8List> _load() async {
-    final bytes = await ref
-        .read(billRepoProvider)
-        .fetchBillPdfBytes(widget.billId);
+    final repo = ref.read(billRepoProvider);
+    // Fetch bill metadata + PDF in parallel; one quick API call gives us the
+    // human bill number for the page title (not the internal db id).
+    final results = await Future.wait([
+      repo.get(widget.billId),
+      repo.fetchBillPdfBytes(widget.billId),
+    ]);
+    final bill = results[0] as dynamic;
+    final bytes = results[1] as List<int>;
+    if (mounted) {
+      setState(() => _billNumber = _shortBillNo(bill.billNumber as String));
+    }
     return Uint8List.fromList(bytes);
   }
 
   @override
   Widget build(BuildContext context) {
+    final title = _billNumber.isEmpty ? 'Bill' : 'Bill #$_billNumber';
     return Scaffold(
       backgroundColor: DT.bg,
       appBar: AppBar(
@@ -48,7 +55,7 @@ class _BillPdfScreenState extends ConsumerState<BillPdfScreen> {
           icon: const Icon(Icons.arrow_back, size: 18),
           onPressed: () => context.go('/dashboard'),
         ),
-        title: Text('Bill #${widget.billId}'),
+        title: Text(title),
         actions: [
           TextButton.icon(
             onPressed: () => context.go('/bills/new'),
@@ -70,12 +77,15 @@ class _BillPdfScreenState extends ConsumerState<BillPdfScreen> {
                   style: const TextStyle(color: DT.err700)),
             );
           }
+          final fname = _billNumber.isEmpty
+              ? 'bill-${widget.billId}.pdf'
+              : 'bill-$_billNumber.pdf';
           return PdfPreview(
             build: (_) async => snap.data!,
             canChangePageFormat: false,
             canChangeOrientation: false,
             canDebug: false,
-            pdfFileName: 'bill-${widget.billId}.pdf',
+            pdfFileName: fname,
           );
         },
       ),

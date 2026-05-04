@@ -4,11 +4,16 @@
 //   * debounced search (300 ms) by name / mobile / village;
 //   * status filter (active / inactive / all);
 //   * per-row Edit, Toggle active, Delete (admin only for toggle+delete);
-//   * "+ New customer" button opens CustomerFormDialog.import 'dart:async';
+//   * "+ New customer" button opens CustomerFormDialog;
+//   * "Upload Excel" bulk import (admin), with row-level error report;
+//   * registration-date range filter, sort newest-first;
+//   * bulk-delete via per-row checkboxes.
+import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/format/inr.dart';
 import '../../core/providers.dart';
@@ -33,7 +38,12 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   int _page = 1;
   String _q = '';
   String _statusFilter = 'active';
+  DateTime? _regFrom;
+  DateTime? _regTo;
   Future<CustomerPage>? _future;
+  final Set<int> _selected = <int>{};
+
+  static final _dateFmt = DateFormat('dd MMM yy');
 
   @override
   void initState() {
@@ -44,8 +54,45 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   /// Re-runs the customer list query with the current filter state.
   void _load() {
     _future = ref.read(customerRepoProvider).list(
-        page: _page, perPage: 25, q: _q, status: _statusFilter);
+          page: _page,
+          perPage: 25,
+          q: _q,
+          status: _statusFilter,
+          registeredFrom: _regFrom,
+          registeredTo: _regTo,
+          sort: 'registered_desc',
+        );
     setState(() {});
+  }
+
+  Future<void> _pickRegDate({required bool from}) async {
+    final initial = (from ? _regFrom : _regTo) ?? DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2015),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (d != null) {
+      setState(() {
+        if (from) {
+          _regFrom = d;
+        } else {
+          _regTo = d;
+        }
+      });
+      _page = 1;
+      _load();
+    }
+  }
+
+  void _clearRegDates() {
+    setState(() {
+      _regFrom = null;
+      _regTo = null;
+    });
+    _page = 1;
+    _load();
   }
 
   @override
@@ -211,6 +258,87 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     }
   }
 
+  Future<void> _bulkDelete() async {
+    if (_selected.isEmpty) return;
+    final ids = _selected.toList();
+    final n = ids.length;
+    final outcome = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogCtx) {
+        bool busy = false;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: Text('Delete $n ${n == 1 ? 'customer' : 'customers'}?'),
+            content: Text(
+              'These customers will be marked deleted (soft-delete). '
+              'You can ask the owner to restore from audit logs if needed.',
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    busy ? null : () => Navigator.pop(dialogCtx, null),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setLocal(() => busy = true);
+                        try {
+                          final res = await ref
+                              .read(customerRepoProvider)
+                              .bulkDelete(ids);
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(
+                              dialogCtx,
+                              'ok:${res['deleted']}:${res['skipped']}',
+                            );
+                          }
+                        } catch (e) {
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'err:${e.toString()}');
+                          }
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : Text('Delete $n'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || outcome == null) return;
+    if (outcome.startsWith('ok:')) {
+      final parts = outcome.split(':');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            Text('Deleted ${parts[1]} · skipped ${parts[2]}'),
+        backgroundColor: DT.ok700,
+        duration: const Duration(seconds: 3),
+      ));
+      setState(_selected.clear);
+      _load();
+    } else if (outcome.startsWith('err:')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(outcome.substring(4)),
+        backgroundColor: DT.err700,
+        duration: const Duration(seconds: 6),
+      ));
+    }
+  }
+
   Future<void> _showImportErrors(List errors) async {
     await showDialog<void>(
       context: context,
@@ -296,7 +424,68 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               ),
             ],
           ),
-          const SizedBox(height: DT.s16),
+          const SizedBox(height: DT.s12),
+          // Date filter + selection action bar
+          Row(
+            children: [
+              _RegDateChip(
+                label: 'Registered from',
+                value: _regFrom,
+                onTap: () => _pickRegDate(from: true),
+                onClear: _regFrom == null
+                    ? null
+                    : () {
+                        setState(() => _regFrom = null);
+                        _page = 1;
+                        _load();
+                      },
+              ),
+              const SizedBox(width: DT.s8),
+              _RegDateChip(
+                label: 'to',
+                value: _regTo,
+                onTap: () => _pickRegDate(from: false),
+                onClear: _regTo == null
+                    ? null
+                    : () {
+                        setState(() => _regTo = null);
+                        _page = 1;
+                        _load();
+                      },
+              ),
+              if (_regFrom != null || _regTo != null) ...[
+                const SizedBox(width: DT.s8),
+                TextButton.icon(
+                  onPressed: _clearRegDates,
+                  icon: const Icon(Icons.refresh, size: 14),
+                  label: const Text('Clear dates'),
+                  style: TextButton.styleFrom(foregroundColor: DT.text2),
+                ),
+              ],
+              const Spacer(),
+              if (_selected.isNotEmpty) ...[
+                Text('${_selected.length} selected',
+                    style: const TextStyle(
+                        fontSize: DT.fsSm,
+                        color: DT.brand700,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(width: DT.s8),
+                TextButton(
+                  onPressed: () => setState(_selected.clear),
+                  child: const Text('Clear'),
+                ),
+                const SizedBox(width: DT.s4),
+                ElevatedButton.icon(
+                  onPressed: isAdmin ? _bulkDelete : null,
+                  icon: const Icon(Icons.delete_outline, size: 14),
+                  label: Text('Delete selected (${_selected.length})'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: DT.err600),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: DT.s12),
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -321,45 +510,99 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                   final page = snap.data!;
                   if (page.items.isEmpty) {
                     return const Center(
-                      child: Text('No customers yet.',
+                      child: Text('No customers match these filters.',
                           style: TextStyle(color: DT.text2)),
                     );
                   }
+                  // Selection helpers — only consider current page items.
+                  final pageIds = page.items.map((c) => c.id).toSet();
+                  final allOnPageSelected = pageIds.isNotEmpty &&
+                      pageIds.every(_selected.contains);
+                  final someOnPageSelected =
+                      pageIds.any(_selected.contains) && !allOnPageSelected;
                   return Column(
                     children: [
                       Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                                minWidth: MediaQuery.of(context).size.width -
-                                    DT.sidebarWidth -
-                                    DT.s48),
-                            child: DataTable(
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.vertical,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                    minWidth: MediaQuery.of(context).size.width -
+                                        DT.sidebarWidth -
+                                        DT.s48),
+                                child: DataTable(
                               headingRowHeight: 40,
                               dataRowMinHeight: DT.rowHeight,
                               dataRowMaxHeight: DT.rowHeight,
-                              columns: const [
-                                DataColumn(label: Text('Name')),
-                                DataColumn(label: Text('Mobile')),
-                                DataColumn(label: Text('Consumer #')),
-                                DataColumn(label: Text('DO')),
-                                DataColumn(label: Text('Type')),
+                              columns: [
                                 DataColumn(
+                                  label: _MiniCheckbox(
+                                    value: allOnPageSelected
+                                        ? true
+                                        : (someOnPageSelected ? null : false),
+                                    tristate: true,
+                                    onChanged: isAdmin
+                                        ? (v) {
+                                            setState(() {
+                                              if (v == true) {
+                                                _selected.addAll(pageIds);
+                                              } else {
+                                                _selected.removeAll(pageIds);
+                                              }
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                ),
+                                const DataColumn(label: Text('Name')),
+                                const DataColumn(label: Text('Mobile')),
+                                const DataColumn(label: Text('Registered')),
+                                const DataColumn(label: Text('Consumer #')),
+                                const DataColumn(label: Text('DO')),
+                                const DataColumn(label: Text('Type')),
+                                const DataColumn(
                                     label: Text('Balance'), numeric: true),
-                                DataColumn(
+                                const DataColumn(
                                     label: Text('Empty'), numeric: true),
-                                DataColumn(label: Text('Status')),
-                                DataColumn(label: Text('')),
+                                const DataColumn(label: Text('Status')),
+                                const DataColumn(label: Text('')),
                               ],
                               rows: [
                                 for (final c in page.items)
-                                  DataRow(cells: [
+                                  DataRow(
+                                    selected: _selected.contains(c.id),
+                                    cells: [
+                                    DataCell(_MiniCheckbox(
+                                      value: _selected.contains(c.id),
+                                      onChanged: isAdmin
+                                          ? (v) {
+                                              setState(() {
+                                                if (v == true) {
+                                                  _selected.add(c.id);
+                                                } else {
+                                                  _selected.remove(c.id);
+                                                }
+                                              });
+                                            }
+                                          : null,
+                                    )),
                                     DataCell(Text(c.name,
                                         style: const TextStyle(
                                             fontWeight: FontWeight.w500))),
                                     DataCell(Text(c.mobile,
                                         style: AppTheme.mono(size: 12))),
+                                    DataCell(Text(
+                                        c.registrationDate == null
+                                            ? '—'
+                                            : _dateFmt.format(
+                                                c.registrationDate!),
+                                        style: const TextStyle(
+                                            fontSize: DT.fsSm,
+                                            color: DT.text2))),
                                     DataCell(Text(c.consumerNumber ?? '',
                                         style: AppTheme.mono(size: 12))),
                                     DataCell(Text(
@@ -411,6 +654,8 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                     )),
                                   ]),
                               ],
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -488,6 +733,104 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           color: active ? DT.ok700 : DT.text2,
           fontSize: DT.fsSm,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniCheckbox extends StatelessWidget {
+  final bool? value;
+  final bool tristate;
+  final ValueChanged<bool?>? onChanged;
+  const _MiniCheckbox({
+    required this.value,
+    this.tristate = false,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: 0.85,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          checkboxTheme: CheckboxThemeData(
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            side: const BorderSide(color: DT.text3, width: 1.2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DT.rXs),
+            ),
+          ),
+        ),
+        child: Checkbox(
+          value: value,
+          tristate: tristate,
+          onChanged: onChanged,
+          activeColor: DT.brand600,
+          checkColor: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _RegDateChip extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+  static final _fmt = DateFormat('dd MMM yy');
+
+  const _RegDateChip({
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(DT.rSm),
+      child: Container(
+        height: DT.inputHeight,
+        padding: const EdgeInsets.symmetric(horizontal: DT.s12),
+        decoration: BoxDecoration(
+          color: DT.surface,
+          border: Border.all(color: DT.border),
+          borderRadius: BorderRadius.circular(DT.rSm),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.calendar_today_outlined,
+                size: 14, color: DT.text2),
+            const SizedBox(width: DT.s8),
+            Text('$label:',
+                style: const TextStyle(
+                    fontSize: DT.fsSm,
+                    color: DT.text3,
+                    fontWeight: FontWeight.w500)),
+            const SizedBox(width: DT.s4),
+            Text(value == null ? '—' : _fmt.format(value!),
+                style: const TextStyle(
+                    fontSize: DT.fsBody,
+                    color: DT.text,
+                    fontWeight: FontWeight.w600)),
+            if (onClear != null) ...[
+              const SizedBox(width: DT.s4),
+              InkWell(
+                onTap: onClear,
+                child: const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(Icons.close, size: 12, color: DT.text3),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

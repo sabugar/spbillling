@@ -1,6 +1,7 @@
+from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,12 @@ def list_customers(
     customer_type: Optional[CustomerType] = None,
     status: Optional[CustomerStatus] = None,
     village: Optional[str] = None,
+    registered_from: Optional[date] = Query(None),
+    registered_to: Optional[date] = Query(None),
+    sort: Optional[str] = Query(
+        None,
+        pattern="^(registered_desc|registered_asc|name_asc|name_desc)$",
+    ),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -31,6 +38,7 @@ def list_customers(
 ):
     stmt = customer_service.list_customers(
         db, q=q, customer_type=customer_type, status=status, village=village,
+        registered_from=registered_from, registered_to=registered_to, sort=sort,
     )
     return paginate(db, stmt, page=page, per_page=per_page, item_schema=CustomerOut)
 
@@ -85,6 +93,19 @@ def delete_customer(
 ):
     customer_service.soft_delete_customer(db, customer_id, user.id)
     return APIResponse(message="Customer deleted")
+
+
+@router.post("/bulk-delete", response_model=APIResponse[dict])
+def bulk_delete_customers(
+    ids: list[int] = Body(..., embed=True, min_length=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    result = customer_service.bulk_soft_delete_customers(db, ids, user.id)
+    return APIResponse(
+        data=result,
+        message=f"Deleted {result['deleted']} · skipped {result['skipped']}",
+    )
 
 
 @router.patch("/{customer_id}/active", response_model=APIResponse[CustomerOut])

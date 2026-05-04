@@ -743,7 +743,9 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                       borderRadius: BorderRadius.circular(DT.rXs),
                     ),
                     child: Text(
-                      '# $_nextBillNumber',
+                      // Show only the trailing serial (e.g. "0015") — the
+                      // FY prefix BILL/26-27/ is implicit and noisy here.
+                      '# ${_nextBillNumber.contains('/') ? _nextBillNumber.split('/').last : _nextBillNumber}',
                       style: AppTheme.mono(
                           size: 11,
                           weight: FontWeight.w700,
