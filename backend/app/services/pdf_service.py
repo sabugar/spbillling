@@ -158,15 +158,25 @@ def _short_bill_no(num: str) -> str:
 
 def _do_name_code(customer: Optional[Customer]) -> str:
     """Build the DO Name & Code string from the customer's distributor outlet.
-    Format: 'OwnerName / CODE' (e.g., 'SP Gas / ZM')."""
+    Format: 'CODE / OwnerName' (e.g., 'ZM / SP Gas')."""
     if not customer:
         return ""
     do = getattr(customer, "distributor_outlet", None)
     if not do:
         return ""
-    if do.owner_name and do.code:
-        return f"{do.owner_name} / {do.code}"
-    return do.owner_name or do.code or ""
+    if do.code and do.owner_name:
+        return f"{do.code} / {do.owner_name}"
+    return do.code or do.owner_name or ""
+
+
+def _do_location(customer: Optional[Customer]) -> str:
+    """Bottom line under DO label — the outlet's location."""
+    if not customer:
+        return ""
+    do = getattr(customer, "distributor_outlet", None)
+    if not do:
+        return ""
+    return (do.location or "").strip()
 
 
 def _customer_address(customer: Optional[Customer]) -> str:
@@ -253,9 +263,13 @@ def _draw_sp_bill_template(c: canvas.Canvas, bill: Bill,
     hline(0, 25, 95, line_w=0.4)
 
     # ---------- DO Name & Code (Y 25–37) ----------
+    # Line 1: <CODE> / <OwnerName>     Line 2: <Location> (smaller, muted)
     text(1.5, 30, "DO Name", font="Helvetica", size=7)
     text(1.5, 33.5, "& Code", font="Helvetica", size=7)
-    text(20, 32.5, _do_name_code(customer), font="Helvetica-Bold", size=8)
+    text(20, 30.5, _do_name_code(customer), font="Helvetica-Bold", size=8)
+    loc = _do_location(customer)
+    if loc:
+        text(20, 35, loc, font="Helvetica", size=7, color=(0.35, 0.40, 0.50))
     hline(0, 37, 95)
 
     # ---------- Bill No / Date (Y 37–46) ----------

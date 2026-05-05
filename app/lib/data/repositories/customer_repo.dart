@@ -3,7 +3,6 @@ import 'package:dio/dio.dart';
 import '../../core/api/api_client.dart';
 import '../models/customer.dart';
 
-/// Paginated slice returned by [CustomerRepo.list].
 class CustomerPage {
   final List<Customer> items;
   final int page;
@@ -19,20 +18,28 @@ class CustomerPage {
   });
 }
 
-/// Methods map 1-1 to backend customer endpoints. Any screen that touches
-/// customer data should go through this class and not call [ApiClient]
-/// directly.
 class CustomerRepo {
   final ApiClient _api;
   CustomerRepo(this._api);
 
-  /// Paginated list with optional search ([q]) and status filter.
-  Future<CustomerPage> list({int page = 1, int perPage = 25, String? q, String? status}) async {
+  Future<CustomerPage> list({
+    int page = 1,
+    int perPage = 25,
+    String? q,
+    String? status,
+    DateTime? registeredFrom,
+    DateTime? registeredTo,
+    String sort = 'registered_desc',
+  }) async {
+    String d(DateTime v) => v.toIso8601String().split('T').first;
     final env = await _api.requestEnvelope('GET', '/customers', query: {
       'page': page,
       'per_page': perPage,
       if (q != null && q.isNotEmpty) 'q': q,
       if (status != null) 'status': status,
+      if (registeredFrom != null) 'registered_from': d(registeredFrom),
+      if (registeredTo != null) 'registered_to': d(registeredTo),
+      'sort': sort,
     });
     final items = (env['data'] as List)
         .map((e) => Customer.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -47,8 +54,6 @@ class CustomerRepo {
     );
   }
 
-  /// Typeahead search used by the New Bill customer picker.
-  /// Empty query short-circuits to an empty list (no network call).
   Future<List<Customer>> search(String q) async {
     if (q.trim().isEmpty) return [];
     final data = await _api.request('GET', '/customers/search', query: {'q': q});
@@ -57,32 +62,35 @@ class CustomerRepo {
         .toList();
   }
 
-  /// Fetches a single customer by id.
   Future<Customer> get(int id) async {
     final data = await _api.request('GET', '/customers/$id');
     return Customer.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// Creates a new customer. `body` typically comes from
-  /// [Customer.toCreateJson].
   Future<Customer> create(Map<String, dynamic> body) async {
     final data = await _api.request('POST', '/customers', data: body);
     return Customer.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// Updates an existing customer (full PUT).
   Future<Customer> update(int id, Map<String, dynamic> body) async {
     final data = await _api.request('PUT', '/customers/$id', data: body);
     return Customer.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// Soft-deletes a customer on the backend (admin-only). The row is kept
-  /// for history but excluded from lists.
   Future<void> delete(int id) async {
     await _api.request('DELETE', '/customers/$id');
   }
 
-  /// Toggles `status` between active/inactive without deleting the record.
+  /// Bulk soft-delete. Returns `{deleted, skipped}`.
+  Future<Map<String, dynamic>> bulkDelete(List<int> ids) async {
+    final data = await _api.request(
+      'POST',
+      '/customers/bulk-delete',
+      data: {'ids': ids},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<Customer> setActive(int id, bool active) async {
     final data = await _api.request('PATCH', '/customers/$id/active',
         query: {'active': active});

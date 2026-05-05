@@ -177,6 +177,9 @@ def list_customers(
     customer_type: Optional[CustomerType] = None,
     status: Optional[CustomerStatus] = None,
     village: Optional[str] = None,
+    registered_from: Optional[date] = None,
+    registered_to: Optional[date] = None,
+    sort: Optional[str] = None,
     include_deleted: bool = False,
 ):
     stmt = select(Customer)
@@ -196,8 +199,53 @@ def list_customers(
         stmt = stmt.where(Customer.status == status)
     if village:
         stmt = stmt.where(Customer.village.ilike(f"%{village}%"))
-    stmt = stmt.order_by(Customer.name.asc())
+    if registered_from:
+        stmt = stmt.where(Customer.registration_date >= registered_from)
+    if registered_to:
+        stmt = stmt.where(Customer.registration_date <= registered_to)
+
+    # Default sort: newest registration first, then name as tie-breaker.
+    if sort == "name_asc":
+        stmt = stmt.order_by(Customer.name.asc())
+    elif sort == "name_desc":
+        stmt = stmt.order_by(Customer.name.desc())
+    elif sort == "registered_asc":
+        stmt = stmt.order_by(
+            Customer.registration_date.asc(), Customer.id.asc()
+        )
+    else:  # "registered_desc" (default)
+        stmt = stmt.order_by(
+            Customer.registration_date.desc(), Customer.id.desc()
+        )
     return stmt
+
+
+def bulk_soft_delete_customers(
+    db: Session, customer_ids: list[int], user_id: int
+) -> dict:
+    """Soft-delete many customers; missing/already-deleted ids are ignored."""
+    if not customer_ids:
+        return {"deleted": 0, "skipped": 0}
+    rows = list(db.scalars(
+        select(Customer).where(Customer.id.in_(customer_ids))
+    ).all())
+    deleted = 0
+    skipped = 0
+    for cust in rows:
+        if cust.is_deleted:
+            skipped += 1
+            continue
+        cust.is_deleted = True
+        cust.status = CustomerStatus.INACTIVE
+        write_audit(
+            db, entity_type="customer", entity_id=cust.id,
+            action=AuditAction.DELETE, user_id=user_id,
+            changes={"bulk": True},
+        )
+        deleted += 1
+    skipped += len(customer_ids) - len(rows)
+    db.commit()
+    return {"deleted": deleted, "skipped": skipped}
 
 
 def search_customers(db: Session, q: str, limit: int = 20) -> list[Customer]:
@@ -221,7 +269,26 @@ def search_customers(db: Session, q: str, limit: int = 20) -> list[Customer]:
 
 
 # --------- Excel import/export ---------
-IMPORT_HEADERS = ["Name", "Mobile", "DO", "Village", "City", "Type", "Opening_Balance", "Opening_Bottles"]
+IMPORT_HEADERS = ["Name", "Mobile", "DO", "Date", "Village", "City", "Type", "Opening_Balance", "Opening_Bottles"]
+
+
+def _parse_excel_date(raw) -> Optional[date]:
+    """Accept date object, datetime, or string (DD.MM.YYYY / DD-MM-YYYY /
+    DD/MM/YYYY / YYYY-MM-DD). Return None for empty cells."""
+    if raw is None:
+        return None
+    if isinstance(raw, date):
+        return raw
+    s = str(raw).strip()
+    if not s:
+        return None
+    from datetime import datetime as _dt
+    for fmt in ("%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d.%m.%y"):
+        try:
+            return _dt.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Unrecognised date '{s}' (expected DD.MM.YYYY)")
 
 
 def import_customers_from_excel(
@@ -281,6 +348,12 @@ def import_customers_from_excel(
             ctype = CustomerType.COMMERCIAL if ctype_raw.startswith("c") else CustomerType.DOMESTIC
             op_bal = Decimal(str(row.get("Opening_Balance", 0) or 0))
             op_bot = int(row.get("Opening_Bottles", 0) or 0)
+            # Registration date — accept "Date" or "date" header.
+            reg_date = (
+                _parse_excel_date(row.get("Date"))
+                or _parse_excel_date(row.get("date"))
+                or date.today()
+            )
 
             # skip if duplicate mobile OR duplicate consumer_number
             exists = db.scalar(select(Customer).where(
@@ -301,7 +374,7 @@ def import_customers_from_excel(
                 consumer_number=consumer_number,
                 do_id=do.id,
                 name=name, mobile=mobile, village=village, city=city or village or "—",
-                customer_type=ctype, registration_date=date.today(),
+                customer_type=ctype, registration_date=reg_date,
                 opening_balance=op_bal, opening_empty_bottles=op_bot,
                 current_balance=op_bal, current_empty_bottles=op_bot,
                 created_by_id=user_id,

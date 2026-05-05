@@ -1,14 +1,4 @@
-// Bills list screen — the admin's gateway to old invoices.
-//
-// Supports:
-//   * date-range filter (default: current month);
-//   * bill-number range filter (accepts partial inputs like "1" or
-//     "0005" and expands them to the full fiscal-year-prefixed form
-//     before hitting the backend — see _normalizeBillNumber);
-//   * pagination;
-//   * per-row "View PDF" action;
-//   * admin-only "Print filtered (9-up)" button that opens the
-//     batch PDF preview.
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,7 +14,6 @@ import '../../data/repositories/bill_repo.dart';
 import '../auth/auth_controller.dart';
 import '../customers/customer_form_dialog.dart' show DOTypeahead;
 
-/// Route `/bills`. Lives inside the shell.
 class BillsScreen extends ConsumerStatefulWidget {
   const BillsScreen({super.key});
 
@@ -41,6 +30,7 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
   DistributorOutlet? _selectedDO;
   int _page = 1;
   Future<BillPage>? _future;
+  final Set<int> _selected = <int>{};
 
   static final _dateFmt = DateFormat('dd MMM yy');
 
@@ -66,53 +56,32 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
     return full.split('/').last;
   }
 
-  static String _fyPrefix(DateTime d) {
-    final start = d.month >= 4 ? d.year % 100 : (d.year - 1) % 100;
-    final end = d.month >= 4 ? (d.year + 1) % 100 : d.year % 100;
-    return '${start.toString().padLeft(2, '0')}-${end.toString().padLeft(2, '0')}';
+  /// Pull only the trailing digits — backend treats this as a serial-number
+  /// match (FY-independent), so "5..30" matches across any month/year.
+  String _serialOnly(String raw) {
+    final m = RegExp(r'(\d+)\s*$').firstMatch(raw.trim());
+    return m == null ? '' : m.group(1)!;
   }
 
-  /// Expands a user-typed partial bill number into the canonical form the
-  /// backend can compare lexicographically.
-  ///
-  ///   "1"        → "BILL/26-27/0001"
-  ///   "0005"     → "BILL/26-27/0005"
-  ///   "BILL/26-27/7" → "BILL/26-27/0007"
-  ///
-  /// Falls back to the raw (uppercased) input for unknown formats so
-  /// power users can still paste exact numbers.
-  String _normalizeBillNumber(String raw, DateTime refDate) {
-    final v = raw.trim().toUpperCase();
-    if (v.isEmpty) return '';
-    final fy = _fyPrefix(refDate);
-    if (RegExp(r'^\d+$').hasMatch(v)) {
-      return 'BILL/$fy/${v.padLeft(4, '0')}';
-    }
-    final parts = v.split('/');
-    if (parts.length == 3 && RegExp(r'^\d+$').hasMatch(parts[2])) {
-      return '${parts[0]}/${parts[1]}/${parts[2].padLeft(4, '0')}';
-    }
-    return v;
-  }
-
-  /// Fires the backend query based on the current filter state.
   void _load() {
-    final fromRef = _fromDate ?? DateTime.now();
-    final toRef = _toDate ?? DateTime.now();
+    final bnFrom = _serialOnly(_billNumFromCtrl.text);
+    final bnTo = _serialOnly(_billNumToCtrl.text);
+    // Bill # is a unique identifier — when the user types one, date range is
+    // irrelevant. Drop the date filter so they always find the bill.
+    final billNumActive = bnFrom.isNotEmpty || bnTo.isNotEmpty;
     _future = ref.read(billRepoProvider).list(
           page: _page,
           perPage: 10,
-          fromDate: _fromDate,
-          toDate: _toDate,
-          billNumberFrom: _normalizeBillNumber(_billNumFromCtrl.text, fromRef),
-          billNumberTo: _normalizeBillNumber(_billNumToCtrl.text, toRef),
+          fromDate: billNumActive ? null : _fromDate,
+          toDate: billNumActive ? null : _toDate,
+          billNumberFrom: bnFrom,
+          billNumberTo: bnTo,
           doId: _selectedDO?.id,
           city: _cityCtrl.text.trim(),
         );
     setState(() {});
   }
 
-  /// Shows the date picker and updates either the `from` or `to` bound.
   Future<void> _pick({required bool from}) async {
     final initial = (from ? _fromDate : _toDate) ?? DateTime.now();
     final d = await showDatePicker(
@@ -133,21 +102,31 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
   }
 
   void _printBatch({String format = 'preprinted'}) {
-    if (_fromDate == null || _toDate == null) {
+    final bnFrom = _serialOnly(_billNumFromCtrl.text);
+    final bnTo = _serialOnly(_billNumToCtrl.text);
+    final billNumActive = bnFrom.isNotEmpty || bnTo.isNotEmpty;
+    if (!billNumActive && (_fromDate == null || _toDate == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pick from & to dates first')),
       );
       return;
     }
-    final fromRef = _fromDate ?? DateTime.now();
-    final toRef = _toDate ?? DateTime.now();
+    // Backend requires `from` and `to`; when only bill# is in play, use a
+    // wide window so the date filter is a no-op.
+    final fromIso = billNumActive
+        ? '2020-01-01'
+        : _fromDate!.toIso8601String().split('T').first;
+    final toIso = billNumActive
+        ? DateTime.now().add(const Duration(days: 1))
+            .toIso8601String()
+            .split('T')
+            .first
+        : _toDate!.toIso8601String().split('T').first;
     final params = <String, String>{
-      'from': _fromDate!.toIso8601String().split('T').first,
-      'to': _toDate!.toIso8601String().split('T').first,
+      'from': fromIso,
+      'to': toIso,
       'format': format,
     };
-    final bnFrom = _normalizeBillNumber(_billNumFromCtrl.text, fromRef);
-    final bnTo = _normalizeBillNumber(_billNumToCtrl.text, toRef);
     if (bnFrom.isNotEmpty) params['bill_number_from'] = bnFrom;
     if (bnTo.isNotEmpty) params['bill_number_to'] = bnTo;
     if (_selectedDO != null) params['do_id'] = _selectedDO!.id.toString();
@@ -158,6 +137,284 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
             '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
         .join('&');
     context.go('/bills/batch-print?$qs');
+  }
+
+  Future<void> _bulkDelete() async {
+    if (_selected.isEmpty) return;
+    final ids = _selected.toList();
+    final n = ids.length;
+    final outcome = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogCtx) {
+        bool busy = false;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: Text('Delete $n ${n == 1 ? 'bill' : 'bills'}?'),
+            content: Text(
+              'These bills will be permanently removed. Customer balances, '
+              'empty-bottle ledgers, and stock will be reversed. The bill '
+              'numbers will be free for new bills (numbering picks up from '
+              'the highest remaining bill).',
+              style: const TextStyle(fontSize: DT.fsSm),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    busy ? null : () => Navigator.pop(dialogCtx, null),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style:
+                    ElevatedButton.styleFrom(backgroundColor: DT.err600),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setLocal(() => busy = true);
+                        try {
+                          final res =
+                              await ref.read(billRepoProvider).bulkDelete(ids);
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(
+                              dialogCtx,
+                              'ok:${res['deleted']}:${res['skipped']}',
+                            );
+                          }
+                        } catch (e) {
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'err:${e.toString()}');
+                          }
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : Text('Delete $n'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || outcome == null) return;
+    if (outcome.startsWith('ok:')) {
+      final parts = outcome.split(':');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            Text('Deleted ${parts[1]} bills · skipped ${parts[2]}'),
+        backgroundColor: DT.ok700,
+        duration: const Duration(seconds: 4),
+      ));
+      setState(_selected.clear);
+      _page = 1;
+      _load();
+    } else if (outcome.startsWith('err:')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(outcome.substring(4)),
+        backgroundColor: DT.err700,
+        duration: const Duration(seconds: 6),
+      ));
+    }
+  }
+
+  Future<void> _deleteBill(Bill b) async {
+    final shortNo = _shortBillNo(b.billNumber);
+    // API call runs inside the dialog button so navigator/context quirks
+    // never block the request — same pattern as customer delete.
+    final outcome = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogCtx) {
+        bool busy = false;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: Text('Delete bill #$shortNo?'),
+            content: Text(
+              'Bill #$shortNo (${b.customerName ?? "—"}) will be permanently '
+              'removed. Customer balance and empty-bottle ledger will be '
+              'reversed, and bill # $shortNo will be free for the next bill.',
+              style: const TextStyle(fontSize: DT.fsSm),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    busy ? null : () => Navigator.pop(dialogCtx, null),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style:
+                    ElevatedButton.styleFrom(backgroundColor: DT.err600),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setLocal(() => busy = true);
+                        try {
+                          await ref.read(billRepoProvider).delete(b.id);
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'ok:$shortNo');
+                          }
+                        } catch (e) {
+                          if (dialogCtx.mounted) {
+                            Navigator.pop(dialogCtx, 'err:${e.toString()}');
+                          }
+                        }
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!mounted || outcome == null) return;
+    if (outcome.startsWith('ok:')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Deleted #${outcome.substring(3)} — '
+            'this number is free for the next bill'),
+        backgroundColor: DT.ok700,
+        duration: const Duration(seconds: 4),
+      ));
+      _load();
+    } else if (outcome.startsWith('err:')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(outcome.substring(4)),
+        backgroundColor: DT.err700,
+        duration: const Duration(seconds: 6),
+      ));
+    }
+  }
+
+  Future<void> _importExcel() async {
+    final XFile? picked = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Excel/CSV', extensions: ['xlsx', 'xls', 'csv']),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+      content: Text('Importing ${picked.name}…'),
+      duration: const Duration(seconds: 60),
+    ));
+    try {
+      final bytes = await picked.readAsBytes();
+      final result = await ref.read(billRepoProvider).importExcel(
+            bytes: bytes,
+            filename: picked.name,
+          );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      final imported = result['imported'] ?? 0;
+      final errors = (result['errors'] as List?) ?? const [];
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          'Imported $imported bills'
+          '${errors.isNotEmpty ? ' · ${errors.length} errors' : ''}',
+        ),
+        duration: const Duration(seconds: 5),
+        backgroundColor: errors.isEmpty ? DT.ok700 : DT.warn700,
+      ));
+      if (errors.isNotEmpty) await _showImportErrors(errors);
+      _page = 1;
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Import failed: ${e.toString()}'),
+        backgroundColor: DT.err700,
+        duration: const Duration(seconds: 8),
+      ));
+    }
+  }
+
+  Future<void> _showImportErrors(List errors) async {
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(
+            '${errors.length} row${errors.length == 1 ? '' : 's'} skipped'),
+        content: SizedBox(
+          width: 520,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: errors.length,
+            itemBuilder: (_, i) {
+              final e = errors[i] as Map;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  'Row ${e['row']}: ${e['error']}',
+                  style: const TextStyle(
+                      fontSize: DT.fsSm, color: DT.err700),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionBar(bool isAdmin) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: DT.s16, vertical: DT.s8),
+      decoration: BoxDecoration(
+        color: DT.brand50,
+        borderRadius: BorderRadius.circular(DT.rMd),
+        border: Border.all(color: DT.brand200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 16, color: DT.brand700),
+          const SizedBox(width: DT.s8),
+          Text('${_selected.length} selected',
+              style: const TextStyle(
+                  color: DT.brand800,
+                  fontWeight: FontWeight.w600,
+                  fontSize: DT.fsBody)),
+          const SizedBox(width: DT.s8),
+          TextButton(
+            onPressed: () => setState(_selected.clear),
+            child: const Text('Clear'),
+          ),
+          const Spacer(),
+          ElevatedButton.icon(
+            onPressed: isAdmin ? _bulkDelete : null,
+            icon: const Icon(Icons.delete_sweep_outlined, size: 14),
+            label: Text('Delete selected (${_selected.length})'),
+            style: ElevatedButton.styleFrom(backgroundColor: DT.err600),
+          ),
+        ],
+      ),
+    );
   }
 
   void _clearFilters() {
@@ -182,8 +439,13 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
           _PageHeader(
             future: _future,
             onPrint: isAdmin ? () => _printBatch(format: 'preprinted') : null,
+            onUpload: isAdmin ? _importExcel : null,
           ),
           const SizedBox(height: DT.s16),
+          if (_selected.isNotEmpty) ...[
+            _selectionBar(isAdmin),
+            const SizedBox(height: DT.s12),
+          ],
           _filtersCard(),
           const SizedBox(height: DT.s16),
           Expanded(child: _tableCard()),
@@ -325,6 +587,11 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
           if (page.items.isEmpty) {
             return _EmptyState(onClear: _clearFilters);
           }
+          final pageIds = page.items.map((b) => b.id).toSet();
+          final allOnPageSelected = pageIds.isNotEmpty &&
+              pageIds.every(_selected.contains);
+          final someOnPageSelected =
+              pageIds.any(_selected.contains) && !allOnPageSelected;
           return Column(
             children: [
               Expanded(
@@ -356,17 +623,31 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
                           horizontalMargin: DT.s16,
                           columnSpacing: DT.s24,
                           dividerThickness: 0.5,
-                          columns: const [
-                            DataColumn(label: Text('BILL #')),
-                            DataColumn(label: Text('DATE')),
-                            DataColumn(label: Text('CUSTOMER')),
-                            DataColumn(label: Text('MODE')),
-                            DataColumn(label: Text('TOTAL'), numeric: true),
-                            DataColumn(label: Text('PAID'), numeric: true),
+                          columns: [
                             DataColumn(
-                                label: Text('BALANCE'), numeric: true),
-                            DataColumn(label: Text('STATUS')),
-                            DataColumn(label: Text('')),
+                              label: _MiniCheckbox(
+                                value: allOnPageSelected
+                                    ? true
+                                    : (someOnPageSelected ? null : false),
+                                tristate: true,
+                                onChanged: (v) {
+                                  setState(() {
+                                    if (v == true) {
+                                      _selected.addAll(pageIds);
+                                    } else {
+                                      _selected.removeAll(pageIds);
+                                    }
+                                  });
+                                },
+                              ),
+                            ),
+                            const DataColumn(label: Text('BILL #')),
+                            const DataColumn(label: Text('DATE')),
+                            const DataColumn(label: Text('CUSTOMER')),
+                            const DataColumn(label: Text('MOBILE')),
+                            const DataColumn(
+                                label: Text('TOTAL'), numeric: true),
+                            const DataColumn(label: Text('')),
                           ],
                           rows: [
                             for (final b in page.items) _row(b),
@@ -388,7 +669,21 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
 
   DataRow _row(Bill b) {
     final isCancelled = b.status == 'cancelled';
-    return DataRow(cells: [
+    return DataRow(
+      selected: _selected.contains(b.id),
+      cells: [
+      DataCell(_MiniCheckbox(
+        value: _selected.contains(b.id),
+        onChanged: (v) {
+          setState(() {
+            if (v == true) {
+              _selected.add(b.id);
+            } else {
+              _selected.remove(b.id);
+            }
+          });
+        },
+      )),
       DataCell(Text(
         '#${_shortBillNo(b.billNumber)}',
         style: AppTheme.mono(size: 12).copyWith(
@@ -404,26 +699,30 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         ]),
       )),
       DataCell(_customerCell(b)),
-      DataCell(_modeBadge(b.paymentMode)),
+      DataCell(Text(
+        b.customerMobile ?? '—',
+        style: AppTheme.mono(size: 12).copyWith(color: DT.text2),
+      )),
       DataCell(Text(fmtINR(b.totalAmount),
           style: AppTheme.mono(size: 12).copyWith(
               fontWeight: FontWeight.w600,
               color: isCancelled ? DT.text3 : DT.text))),
-      DataCell(Text(fmtINR(b.amountPaid),
-          style: AppTheme.mono(size: 12).copyWith(color: DT.text2))),
-      DataCell(b.balanceDue > 0
-          ? Text(fmtINR(b.balanceDue),
-              style: AppTheme.mono(size: 12).copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: isCancelled ? DT.text3 : DT.err700))
-          : const Text('—',
-              style: TextStyle(color: DT.text3, fontSize: DT.fsSm))),
-      DataCell(_statusBadge(b)),
-      DataCell(IconButton(
-        tooltip: 'View / Print PDF',
-        icon: const Icon(Icons.picture_as_pdf_outlined,
-            size: 16, color: DT.brand700),
-        onPressed: () => context.go('/bills/${b.id}/pdf'),
+      DataCell(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'View / Print PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined,
+                size: 16, color: DT.brand700),
+            onPressed: () => context.go('/bills/${b.id}/pdf'),
+          ),
+          IconButton(
+            tooltip: 'Delete bill',
+            icon: const Icon(Icons.delete_outline,
+                size: 16, color: DT.err600),
+            onPressed: () => _deleteBill(b),
+          ),
+        ],
       )),
     ]);
   }
@@ -461,52 +760,6 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         ],
       ),
     );
-  }
-
-  Widget _modeBadge(String mode) {
-    Color bg, fg;
-    switch (mode) {
-      case 'cash':
-        bg = DT.surface3;
-        fg = DT.text2;
-        break;
-      case 'cheque':
-        bg = DT.warn50;
-        fg = DT.warn700;
-        break;
-      case 'upi':
-        bg = DT.brand50;
-        fg = DT.brand700;
-        break;
-      case 'card':
-        bg = DT.brand50;
-        fg = DT.brand700;
-        break;
-      case 'credit':
-        bg = DT.err50;
-        fg = DT.err700;
-        break;
-      default:
-        bg = DT.surface3;
-        fg = DT.text2;
-    }
-    return _Pill(label: mode, bg: bg, fg: fg);
-  }
-
-  Widget _statusBadge(Bill b) {
-    if (b.status == 'cancelled') {
-      return _Pill(label: 'cancelled', bg: DT.err50, fg: DT.err700);
-    }
-    if (b.status == 'draft') {
-      return _Pill(label: 'draft', bg: DT.surface3, fg: DT.text2);
-    }
-    if (b.balanceDue <= 0) {
-      return _Pill(label: 'paid', bg: DT.ok50, fg: DT.ok700);
-    }
-    if (b.amountPaid > 0) {
-      return _Pill(label: 'partial', bg: DT.warn50, fg: DT.warn700);
-    }
-    return _Pill(label: 'unpaid', bg: DT.err50, fg: DT.err700);
   }
 
   Widget _footer(BillPage page) {
@@ -577,7 +830,12 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
 class _PageHeader extends StatelessWidget {
   final Future<BillPage>? future;
   final VoidCallback? onPrint;
-  const _PageHeader({required this.future, this.onPrint});
+  final VoidCallback? onUpload;
+  const _PageHeader({
+    required this.future,
+    this.onPrint,
+    this.onUpload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -617,6 +875,14 @@ class _PageHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (onUpload != null) ...[
+          OutlinedButton.icon(
+            onPressed: onUpload,
+            icon: const Icon(Icons.upload_file, size: 14),
+            label: const Text('Upload bills'),
+          ),
+          const SizedBox(width: DT.s8),
+        ],
         if (onPrint != null)
           OutlinedButton.icon(
             onPressed: onPrint,
@@ -677,32 +943,6 @@ class _DateRangeButton extends StatelessWidget {
   }
 }
 
-class _Pill extends StatelessWidget {
-  final String label;
-  final Color bg;
-  final Color fg;
-  const _Pill({required this.label, required this.bg, required this.fg});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: DT.s8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontSize: DT.fsSm,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
-      ),
-    );
-  }
-}
 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onClear;
@@ -740,6 +980,43 @@ class _EmptyState extends StatelessWidget {
             label: const Text('Clear filters'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MiniCheckbox extends StatelessWidget {
+  final bool? value;
+  final bool tristate;
+  final ValueChanged<bool?>? onChanged;
+  const _MiniCheckbox({
+    required this.value,
+    this.tristate = false,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: 0.85,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          checkboxTheme: CheckboxThemeData(
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            side: const BorderSide(color: DT.text3, width: 1.2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DT.rXs),
+            ),
+          ),
+        ),
+        child: Checkbox(
+          value: value,
+          tristate: tristate,
+          onChanged: onChanged,
+          activeColor: DT.brand600,
+          checkColor: Colors.white,
+        ),
       ),
     );
   }

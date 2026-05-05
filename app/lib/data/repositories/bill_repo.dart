@@ -1,13 +1,7 @@
-// Repository for bill creation, listing, PDF downloads, and the
-// dashboard aggregate endpoint.
-//
-// Dates are always serialized as `yyyy-MM-dd` (no time component) because
-// the backend treats bills as date-only records.
 import 'package:dio/dio.dart';
 import '../../core/api/api_client.dart';
 import '../models/bill.dart';
 
-/// Paginated slice returned by [BillRepo.list].
 class BillPage {
   final List<Bill> items;
   final int page;
@@ -23,14 +17,10 @@ class BillPage {
   });
 }
 
-/// All bill-related API calls live here.
 class BillRepo {
   final ApiClient _api;
   BillRepo(this._api);
 
-  /// Saves a new bill. Backend generates the bill number, applies
-  /// GST-inclusive math, decrements stock, and updates the customer's
-  /// balance + empty-bottle ledger atomically.
   Future<Bill> create({
     required int customerId,
     required DateTime billDate,
@@ -55,15 +45,11 @@ class BillRepo {
     return Bill.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// Fetches a saved bill with items and customer details.
   Future<Bill> get(int id) async {
     final data = await _api.request('GET', '/bills/$id');
     return Bill.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  /// Paginated list with flexible filters. Bill-number range filters are
-  /// evaluated lexicographically server-side, which works inside one FY
-  /// because the prefix (`BILL/25-26/`) is constant.
   Future<BillPage> list({
     int page = 1,
     int perPage = 25,
@@ -104,8 +90,6 @@ class BillRepo {
     );
   }
 
-  /// Downloads a single A4 PDF for the given bill. Returns raw bytes so
-  /// the caller (PdfPreview) can decide how to display or print them.
   Future<List<int>> fetchBillPdfBytes(int id) async {
     final bytes = await _api.request(
       'GET',
@@ -115,8 +99,6 @@ class BillRepo {
     return List<int>.from(bytes as List);
   }
 
-  /// Downloads the 9-up A4 PDF covering bills in a date range.
-  /// Used by the "Print filtered" button on the Bills screen.
   Future<List<int>> fetchBatchPdfBytes({
     required DateTime fromDate,
     required DateTime toDate,
@@ -146,8 +128,6 @@ class BillRepo {
     return List<int>.from(bytes as List);
   }
 
-  /// Peeks the bill number the backend would assign next for [billDate].
-  /// Displayed as a read-only hint while composing a new bill.
   Future<String> nextBillNumber({DateTime? billDate}) async {
     final data = await _api.request(
       'GET',
@@ -163,11 +143,51 @@ class BillRepo {
     return '';
   }
 
-  /// Pulls the aggregate KPI payload for the Dashboard screen
-  /// (today's sales, cash collected, empty pending, dues).
+  /// Hard-delete a bill — reverses all side-effects and frees its number.
+  /// Returns `{bill_number}` of the removed bill.
+  Future<Map<String, dynamic>> delete(int id) async {
+    final data = await _api.request('DELETE', '/bills/$id');
+    return Map<String, dynamic>.from((data ?? {}) as Map);
+  }
+
+  /// Bulk hard-delete. Returns `{deleted, skipped, bill_numbers}`.
+  Future<Map<String, dynamic>> bulkDelete(List<int> ids) async {
+    final data = await _api.request(
+      'POST',
+      '/bills/bulk-delete',
+      data: {'ids': ids},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<Map<String, dynamic>?> dashboard() async {
     final data = await _api.request('GET', '/reports/dashboard');
     if (data is Map) return Map<String, dynamic>.from(data);
     return null;
+  }
+
+  /// Hard-delete every bill so numbering restarts at 0001. Caller must pass
+  /// the literal string "RESET" — the backend rejects anything else.
+  Future<Map<String, dynamic>> resetAll() async {
+    final data = await _api.request(
+      'POST',
+      '/bills/reset',
+      data: {'confirm': 'RESET'},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Bulk-create bills from an Excel sheet.
+  /// Headers (subset OK): Mobile, Date, Variant, Qty, Amount_Paid,
+  /// Payment_Mode, Empty_Returned, Discount, Notes.
+  Future<Map<String, dynamic>> importExcel({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final data = await _api.request('POST', '/bills/import', data: form);
+    return Map<String, dynamic>.from(data as Map);
   }
 }

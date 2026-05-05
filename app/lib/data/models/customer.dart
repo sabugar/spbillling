@@ -48,6 +48,7 @@ class Customer {
   final int emptyPending;
   final String? notes;
   final bool isDeleted;
+  final DateTime? registrationDate;
 
   Customer({
     required this.id,
@@ -69,6 +70,7 @@ class Customer {
     required this.emptyPending,
     this.notes,
     required this.isDeleted,
+    this.registrationDate,
   });
 
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
@@ -96,6 +98,9 @@ class Customer {
             _asInt(j['current_empty_bottles'] ?? j['empty_pending']),
         notes: j['notes'] as String?,
         isDeleted: j['is_deleted'] as bool? ?? false,
+        registrationDate: j['registration_date'] is String
+            ? DateTime.tryParse(j['registration_date'] as String)
+            : null,
       );
 
   /// JSON body for `POST /api/customers`. Skips empty optional fields so

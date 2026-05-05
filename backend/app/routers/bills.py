@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -79,11 +79,31 @@ def update_bill(bill_id: int, payload: BillUpdate, db: Session = Depends(get_db)
     return APIResponse(data=BillOut.model_validate(bill), message="Bill updated")
 
 
-@router.delete("/{bill_id}", response_model=APIResponse)
-def cancel_bill(bill_id: int, db: Session = Depends(get_db),
+@router.delete("/{bill_id}", response_model=APIResponse[dict])
+def delete_bill(bill_id: int, db: Session = Depends(get_db),
                 user: User = Depends(require_admin)):
-    billing_service.cancel_bill(db, bill_id, user.id)
-    return APIResponse(message="Bill cancelled")
+    """Hard-delete the bill so its number is free for the next bill.
+    Side-effects (customer balance, empty-bottle ledger, stock, cheques,
+    bill-linked payments) are reversed first."""
+    result = billing_service.delete_bill_hard(db, bill_id, user.id)
+    return APIResponse(
+        data=result,
+        message=f"Deleted bill {result['bill_number']} — slot is free again",
+    )
+
+
+@router.post("/bulk-delete", response_model=APIResponse[dict])
+def bulk_delete_bills(
+    ids: list[int] = Body(..., embed=True, min_length=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    result = billing_service.bulk_delete_bills(db, ids, user.id)
+    return APIResponse(
+        data=result,
+        message=f"Deleted {result['deleted']} bills · "
+                f"skipped {result['skipped']}",
+    )
 
 
 @router.get("/{bill_id}/pdf")
@@ -117,6 +137,9 @@ def print_batch(
         bill_number_from=bill_number_from, bill_number_to=bill_number_to,
     )
     bills = list(db.scalars(stmt).all())
+    # PDF prints in ascending order (0001, 0002, …) so the first page holds
+    # the earliest serials and the last page holds the latest.
+    bills.sort(key=lambda b: (b.bill_date, b.bill_number))
     if format == "preprinted":
         pdf_bytes = render_bills_preprinted_overlay_pdf(db, bills)
         filename = "bills-preprinted.pdf"
@@ -138,3 +161,41 @@ def customer_ledger(customer_id: int, db: Session = Depends(get_db),
                     _user: User = Depends(get_current_user)):
     data = billing_service.customer_ledger(db, customer_id)
     return APIResponse(data=CustomerLedger(**data))
+
+
+@router.post("/reset", response_model=APIResponse[dict])
+def reset_all_bills(
+    confirm: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Hard-delete every bill so numbering restarts at 0001. Caller must send
+    `{"confirm": "RESET"}` so this can never be triggered by accident."""
+    if confirm != "RESET":
+        raise HTTPException(
+            status_code=400,
+            detail='To confirm, send {"confirm": "RESET"}',
+        )
+    result = billing_service.reset_all_bills(db, user.id)
+    return APIResponse(
+        data=result,
+        message=f"Deleted {result['bills_deleted']} bills · "
+                f"{result['customers_reset']} customer balances reset",
+    )
+
+
+@router.post("/import", response_model=APIResponse[dict])
+async def import_bills(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_staff),
+):
+    content = await file.read()
+    result = billing_service.import_bills_from_excel(db, content, user.id)
+    db.commit()
+    errors = result.get("errors", [])
+    return APIResponse(
+        data=result,
+        message=f"Imported {result['imported']} bills"
+                f"{f' · {len(errors)} errors' if errors else ''}",
+    )

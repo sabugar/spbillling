@@ -70,6 +70,7 @@ class Bill {
   final DateTime billDate;
   final int customerId;
   final String? customerName;
+  final String? customerMobile;
   final String? customerVillage;
   final double subtotal;
   final double gstAmount;
@@ -88,6 +89,7 @@ class Bill {
     required this.billDate,
     required this.customerId,
     this.customerName,
+    this.customerMobile,
     this.customerVillage,
     required this.subtotal,
     required this.gstAmount,
@@ -112,6 +114,8 @@ class Bill {
             DateTime.now(),
         customerId: _i(j['customer_id']),
         customerName: custMap?['name'] as String? ?? j['customer_name'] as String?,
+        customerMobile:
+            custMap?['mobile'] as String? ?? j['customer_mobile'] as String?,
         customerVillage:
             custMap?['village'] as String? ?? j['customer_village'] as String?,
         subtotal: _d(j['subtotal']),

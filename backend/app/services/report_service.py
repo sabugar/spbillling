@@ -1,6 +1,16 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
@@ -232,3 +242,328 @@ def dashboard(db: Session) -> dict:
         "total_outstanding": outstanding_total,
         "total_pending_empty": int(pending_empty),
     }
+
+
+# ===========================================================================
+# Registers — daily and DO-wise rollups for the sidebar "Register" pages.
+# ===========================================================================
+
+def _short_serial(bill_no: str | None) -> str:
+    """`BILL/26-27/0017` -> `0017`. Anything else returned unchanged."""
+    if not bill_no:
+        return ""
+    return bill_no.rsplit("/", 1)[-1]
+
+
+def daily_register(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> list[dict]:
+    """One row per day with the bill# range, count, and total amount."""
+    stmt = (
+        select(
+            Bill.bill_date.label("bill_date"),
+            func.min(Bill.bill_number).label("bill_from"),
+            func.max(Bill.bill_number).label("bill_to"),
+            func.count(Bill.id).label("qty"),
+            func.coalesce(func.sum(Bill.total_amount), 0).label("total"),
+        )
+        .where(
+            Bill.bill_date >= from_date,
+            Bill.bill_date <= to_date,
+            Bill.status == BillStatus.CONFIRMED,
+        )
+        .group_by(Bill.bill_date)
+        .order_by(Bill.bill_date.asc())
+    )
+    if do_id:
+        stmt = stmt.join(Customer, Bill.customer_id == Customer.id).where(
+            Customer.do_id == do_id
+        )
+    rows = db.execute(stmt).all()
+    return [
+        {
+            "date": r.bill_date.isoformat(),
+            "bill_from": _short_serial(r.bill_from),
+            "bill_to": _short_serial(r.bill_to),
+            "qty": int(r.qty),
+            "total": str(r.total),
+        }
+        for r in rows
+    ]
+
+
+def do_register(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> list[dict]:
+    """One row per (DO, day): includes do_code, do_name + the daily numbers.
+    Pass `do_id` to scope the report to a single Distributor Outlet."""
+    from app.models.distributor_outlet import DistributorOutlet
+    stmt = (
+        select(
+            DistributorOutlet.id.label("do_id"),
+            DistributorOutlet.code.label("do_code"),
+            DistributorOutlet.owner_name.label("do_name"),
+            DistributorOutlet.location.label("do_location"),
+            Bill.bill_date.label("bill_date"),
+            func.min(Bill.bill_number).label("bill_from"),
+            func.max(Bill.bill_number).label("bill_to"),
+            func.count(Bill.id).label("qty"),
+            func.coalesce(func.sum(Bill.total_amount), 0).label("total"),
+        )
+        .join(Customer, Bill.customer_id == Customer.id)
+        .join(DistributorOutlet, Customer.do_id == DistributorOutlet.id)
+        .where(
+            Bill.bill_date >= from_date,
+            Bill.bill_date <= to_date,
+            Bill.status == BillStatus.CONFIRMED,
+        )
+        .group_by(
+            DistributorOutlet.id,
+            DistributorOutlet.code,
+            DistributorOutlet.owner_name,
+            DistributorOutlet.location,
+            Bill.bill_date,
+        )
+        .order_by(
+            DistributorOutlet.code.asc(), Bill.bill_date.asc()
+        )
+    )
+    if do_id:
+        stmt = stmt.where(DistributorOutlet.id == do_id)
+    rows = db.execute(stmt).all()
+    return [
+        {
+            "do_id": r.do_id,
+            "do_code": r.do_code,
+            "do_name": r.do_name,
+            "do_location": r.do_location,
+            "date": r.bill_date.isoformat(),
+            "bill_from": _short_serial(r.bill_from),
+            "bill_to": _short_serial(r.bill_to),
+            "qty": int(r.qty),
+            "total": str(r.total),
+        }
+        for r in rows
+    ]
+
+
+# ---------- Register exports (Excel + PDF) ----------
+
+_HEADER_FILL = PatternFill("solid", fgColor="0F766E")
+_HEADER_FONT = Font(bold=True, color="FFFFFF")
+
+
+def _fmt_date_str(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).strftime("%d %b %Y")
+    except Exception:
+        return iso
+
+
+def _autofit(ws) -> None:
+    from openpyxl.utils import get_column_letter
+    for col_idx in range(1, ws.max_column + 1):
+        widest = 8
+        for row_idx in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            # Skip merged-cell stand-ins (MergedCell rows have no real value).
+            v = cell.value
+            if v is None:
+                continue
+            widest = max(widest, len(str(v)))
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(40, widest + 4)
+
+
+def daily_register_excel(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> bytes:
+    rows = daily_register(db, from_date, to_date, do_id=do_id)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Daily Register"
+    ws.append([f"Daily Register · {from_date.strftime('%d %b %Y')} → {to_date.strftime('%d %b %Y')}"])
+    ws.merge_cells(start_row=1, end_row=1, start_column=1, end_column=5)
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].alignment = Alignment(horizontal="center")
+    headers = ["Date", "Bill # From", "Bill # To", "Qty", "Total (Rs.)"]
+    ws.append([])
+    ws.append(headers)
+    for cell in ws[3]:
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center")
+    total_qty = 0
+    total_amt = Decimal("0")
+    for r in rows:
+        ws.append([
+            _fmt_date_str(r["date"]),
+            r["bill_from"], r["bill_to"], r["qty"], float(r["total"]),
+        ])
+        total_qty += r["qty"]
+        total_amt += Decimal(r["total"])
+    ws.append([])
+    ws.append(["TOTAL", "", "", total_qty, float(total_amt)])
+    last = ws.max_row
+    for cell in ws[last]:
+        cell.font = Font(bold=True)
+    _autofit(ws)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _table_pdf(title: str, headers: list[str], data: list[list],
+               totals: list | None = None) -> bytes:
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=12 * mm, rightMargin=12 * mm,
+        topMargin=12 * mm, bottomMargin=12 * mm,
+    )
+    styles = getSampleStyleSheet()
+    story = [Paragraph(f"<b>{title}</b>", styles["Title"]), Spacer(1, 6)]
+    body = [headers] + data
+    if totals:
+        body.append(totals)
+    tbl = Table(body, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("ALIGN", (-2, 1), (-1, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E4E7EE")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2 if totals else -1),
+         [colors.white, colors.HexColor("#F7F8FB")]),
+        ("BACKGROUND", (0, -1), (-1, -1),
+         colors.HexColor("#F1F3F8") if totals else colors.white),
+        ("FONTNAME", (0, -1), (-1, -1),
+         "Helvetica-Bold" if totals else "Helvetica"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(tbl)
+    doc.build(story)
+    return buf.getvalue()
+
+
+def daily_register_pdf(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> bytes:
+    rows = daily_register(db, from_date, to_date, do_id=do_id)
+    title = (
+        f"Daily Register · {from_date.strftime('%d %b %Y')} → "
+        f"{to_date.strftime('%d %b %Y')}"
+    )
+    data = [
+        [_fmt_date_str(r["date"]), r["bill_from"], r["bill_to"],
+         str(r["qty"]), f"Rs. {Decimal(r['total']):,.2f}"]
+        for r in rows
+    ]
+    total_qty = sum(r["qty"] for r in rows)
+    total_amt = sum(Decimal(r["total"]) for r in rows) if rows else Decimal("0")
+    totals = ["TOTAL", "", "", str(total_qty), f"Rs. {total_amt:,.2f}"]
+    return _table_pdf(
+        title, ["Date", "Bill # From", "Bill # To", "Qty", "Total"],
+        data, totals,
+    )
+
+
+def do_register_excel(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> bytes:
+    rows = do_register(db, from_date, to_date, do_id=do_id)
+    # Exports must read date-first ascending — DO code is secondary tie-break.
+    rows.sort(key=lambda r: (r["date"], r["do_code"]))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "DO Register"
+    title = "DO Register"
+    if do_id and rows:
+        title += f" · {rows[0]['do_code']} / {rows[0]['do_name']}"
+    title += (
+        f" · {from_date.strftime('%d %b %Y')} → {to_date.strftime('%d %b %Y')}"
+    )
+    ws.append([title])
+    ws.merge_cells(start_row=1, end_row=1, start_column=1, end_column=7)
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].alignment = Alignment(horizontal="center")
+    headers = ["DO Code", "DO Name", "Location", "Date",
+               "Bill # From", "Bill # To", "Qty", "Total (Rs.)"]
+    ws.append([])
+    ws.append(headers)
+    for cell in ws[3]:
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center")
+    total_qty = 0
+    total_amt = Decimal("0")
+    for r in rows:
+        ws.append([
+            r["do_code"], r["do_name"], r.get("do_location") or "",
+            _fmt_date_str(r["date"]),
+            r["bill_from"], r["bill_to"],
+            r["qty"], float(r["total"]),
+        ])
+        total_qty += r["qty"]
+        total_amt += Decimal(r["total"])
+    ws.append([])
+    ws.append(["TOTAL", "", "", "", "", "", total_qty, float(total_amt)])
+    for cell in ws[ws.max_row]:
+        cell.font = Font(bold=True)
+    _autofit(ws)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def do_register_pdf(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    *,
+    do_id: int | None = None,
+) -> bytes:
+    rows = do_register(db, from_date, to_date, do_id=do_id)
+    rows.sort(key=lambda r: (r["date"], r["do_code"]))
+    title = "DO Register"
+    if do_id and rows:
+        title += f" — {rows[0]['do_code']} / {rows[0]['do_name']}"
+    title += (
+        f" · {from_date.strftime('%d %b %Y')} to {to_date.strftime('%d %b %Y')}"
+    )
+    headers = ["DO", "Date", "Bill # From", "Bill # To", "Qty", "Total"]
+    data = [
+        [f"{r['do_code']} · {r['do_name']}", _fmt_date_str(r["date"]),
+         r["bill_from"], r["bill_to"], str(r["qty"]),
+         f"Rs. {Decimal(r['total']):,.2f}"]
+        for r in rows
+    ]
+    total_qty = sum(r["qty"] for r in rows)
+    total_amt = sum(Decimal(r["total"]) for r in rows) if rows else Decimal("0")
+    totals = ["TOTAL", "", "", "", str(total_qty), f"Rs. {total_amt:,.2f}"]
+    return _table_pdf(title, headers, data, totals)
