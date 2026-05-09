@@ -566,9 +566,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                 const DataColumn(label: Text('Type')),
                                 const DataColumn(
                                     label: Text('Balance'), numeric: true),
-                                const DataColumn(
-                                    label: Text('Empty'), numeric: true),
-                                const DataColumn(label: Text('Status')),
                                 const DataColumn(label: Text('')),
                               ],
                               rows: [
@@ -593,7 +590,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                     DataCell(Text(c.name,
                                         style: const TextStyle(
                                             fontWeight: FontWeight.w500))),
-                                    DataCell(Text(c.mobile,
+                                    DataCell(Text(c.mobile ?? '—',
                                         style: AppTheme.mono(size: 12))),
                                     DataCell(Text(
                                         c.registrationDate == null
@@ -611,9 +608,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                     DataCell(_typeChip(c.customerType)),
                                     DataCell(Text(fmtINR(c.balance),
                                         style: AppTheme.mono(size: 12))),
-                                    DataCell(Text(c.emptyPending.toString(),
-                                        style: AppTheme.mono(size: 12))),
-                                    DataCell(_statusChip(c.status)),
                                     DataCell(Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [

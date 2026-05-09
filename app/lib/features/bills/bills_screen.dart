@@ -31,6 +31,7 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
   int _page = 1;
   Future<BillPage>? _future;
   final Set<int> _selected = <int>{};
+  bool _selectingAll = false;
 
   static final _dateFmt = DateFormat('dd MMM yy');
 
@@ -137,6 +138,49 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
             '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
         .join('&');
     context.go('/bills/batch-print?$qs');
+  }
+
+  /// Fetches every bill id matching the current filter (across all pages)
+  /// and adds them to the selection. Used by the header "Select all".
+  Future<void> _selectAllMatching() async {
+    if (_selectingAll) return;
+    setState(() => _selectingAll = true);
+    try {
+      final bnFrom = _serialOnly(_billNumFromCtrl.text);
+      final bnTo = _serialOnly(_billNumToCtrl.text);
+      final billNumActive = bnFrom.isNotEmpty || bnTo.isNotEmpty;
+      final repo = ref.read(billRepoProvider);
+      int page = 1;
+      const perPage = 100; // backend cap
+      final ids = <int>{};
+      while (true) {
+        final p = await repo.list(
+          page: page,
+          perPage: perPage,
+          fromDate: billNumActive ? null : _fromDate,
+          toDate: billNumActive ? null : _toDate,
+          billNumberFrom: bnFrom,
+          billNumberTo: bnTo,
+          doId: _selectedDO?.id,
+          city: _cityCtrl.text.trim(),
+        );
+        ids.addAll(p.items.map((b) => b.id));
+        if (page >= p.lastPage || p.items.isEmpty) break;
+        page++;
+      }
+      if (!mounted) return;
+      setState(() {
+        _selected.addAll(ids);
+        _selectingAll = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _selectingAll = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not fetch all bills: $e'),
+        backgroundColor: DT.err700,
+      ));
+    }
   }
 
   Future<void> _bulkDelete() async {
@@ -588,10 +632,13 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
             return _EmptyState(onClear: _clearFilters);
           }
           final pageIds = page.items.map((b) => b.id).toSet();
-          final allOnPageSelected = pageIds.isNotEmpty &&
-              pageIds.every(_selected.contains);
-          final someOnPageSelected =
-              pageIds.any(_selected.contains) && !allOnPageSelected;
+          // Header tristate now reflects "all matching across pages":
+          //   true   → every matching row in this filter is selected
+          //   null   → some are selected (mixed)
+          //   false  → none
+          final allMatchingSelected =
+              page.total > 0 && _selected.length >= page.total;
+          final anySelected = _selected.isNotEmpty;
           return Column(
             children: [
               Expanded(
@@ -625,25 +672,33 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
                           dividerThickness: 0.5,
                           columns: [
                             DataColumn(
-                              label: _MiniCheckbox(
-                                value: allOnPageSelected
-                                    ? true
-                                    : (someOnPageSelected ? null : false),
-                                tristate: true,
-                                onChanged: (v) {
-                                  setState(() {
-                                    if (v == true) {
-                                      _selected.addAll(pageIds);
-                                    } else {
-                                      _selected.removeAll(pageIds);
-                                    }
-                                  });
-                                },
-                              ),
+                              label: _selectingAll
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    )
+                                  : _MiniCheckbox(
+                                      // ON = every matching row selected
+                                      // (across all pages, not just this one).
+                                      value: allMatchingSelected
+                                          ? true
+                                          : (anySelected ? null : false),
+                                      tristate: true,
+                                      onChanged: (v) {
+                                        if (v == true) {
+                                          _selectAllMatching();
+                                        } else {
+                                          setState(_selected.clear);
+                                        }
+                                      },
+                                    ),
                             ),
                             const DataColumn(label: Text('BILL #')),
                             const DataColumn(label: Text('DATE')),
                             const DataColumn(label: Text('CUSTOMER')),
+                            const DataColumn(label: Text('DO')),
                             const DataColumn(label: Text('MOBILE')),
                             const DataColumn(
                                 label: Text('TOTAL'), numeric: true),
@@ -699,6 +754,7 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         ]),
       )),
       DataCell(_customerCell(b)),
+      DataCell(_doCell(b)),
       DataCell(Text(
         b.customerMobile ?? '—',
         style: AppTheme.mono(size: 12).copyWith(color: DT.text2),
@@ -725,6 +781,28 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         ],
       )),
     ]);
+  }
+
+  Widget _doCell(Bill b) {
+    final code = (b.customerDoCode ?? '').trim();
+    if (code.isEmpty) {
+      return const Text('—',
+          style: TextStyle(color: DT.text3, fontSize: DT.fsSm));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: DT.brand50,
+        borderRadius: BorderRadius.circular(DT.rXs),
+      ),
+      child: Text(
+        code,
+        style: const TextStyle(
+            color: DT.brand800,
+            fontSize: DT.fsSm,
+            fontWeight: FontWeight.w700),
+      ),
+    );
   }
 
   Widget _customerCell(Bill b) {

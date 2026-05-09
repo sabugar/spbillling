@@ -72,6 +72,8 @@ class Bill {
   final String? customerName;
   final String? customerMobile;
   final String? customerVillage;
+  final String? customerDoCode;
+  final String? customerDoName;
   final double subtotal;
   final double gstAmount;
   final double discount;
@@ -91,6 +93,8 @@ class Bill {
     this.customerName,
     this.customerMobile,
     this.customerVillage,
+    this.customerDoCode,
+    this.customerDoName,
     required this.subtotal,
     required this.gstAmount,
     required this.discount,
@@ -107,6 +111,9 @@ class Bill {
     final cust = j['customer'];
     final Map<String, dynamic>? custMap =
         cust is Map ? Map<String, dynamic>.from(cust) : null;
+    final doMap = custMap?['distributor_outlet'];
+    final Map<String, dynamic>? doData =
+        doMap is Map ? Map<String, dynamic>.from(doMap) : null;
     return Bill(
         id: _i(j['id']),
         billNumber: j['bill_number'] as String? ?? '',
@@ -118,6 +125,8 @@ class Bill {
             custMap?['mobile'] as String? ?? j['customer_mobile'] as String?,
         customerVillage:
             custMap?['village'] as String? ?? j['customer_village'] as String?,
+        customerDoCode: doData?['code'] as String?,
+        customerDoName: doData?['owner_name'] as String?,
         subtotal: _d(j['subtotal']),
         gstAmount: _d(j['gst_amount']),
         discount: _d(j['discount']),

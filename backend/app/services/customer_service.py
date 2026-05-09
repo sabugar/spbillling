@@ -19,8 +19,11 @@ from app.utils.audit import write_audit
 
 
 def _check_mobile_unique(
-    db: Session, mobile: str, exclude_id: Optional[int] = None
+    db: Session, mobile: Optional[str], exclude_id: Optional[int] = None
 ) -> None:
+    # Mobile is optional now — skip the duplicate check when blank.
+    if not mobile:
+        return
     stmt = select(Customer).where(
         Customer.mobile == mobile,
         Customer.is_deleted.is_(False),
@@ -70,7 +73,9 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Custo
         consumer_number=payload.consumer_number,
         do_id=payload.do_id,
         name=payload.name,
-        mobile=payload.mobile,
+        # mobile column is NOT NULL — store "" when blank so the form can
+        # leave it empty without breaking the constraint.
+        mobile=payload.mobile or "",
         alternate_mobile=payload.alternate_mobile,
         village=payload.village,
         city=payload.city,
@@ -116,8 +121,13 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate, user
     cust = get_customer(db, customer_id)
     data = payload.model_dump(exclude_unset=True)
 
-    if "mobile" in data and data["mobile"] != cust.mobile:
-        _check_mobile_unique(db, data["mobile"], exclude_id=cust.id)
+    if "mobile" in data:
+        # Treat blank/None as "no mobile" and persist as empty string
+        # (column is NOT NULL).
+        if not data["mobile"]:
+            data["mobile"] = ""
+        if data["mobile"] != cust.mobile:
+            _check_mobile_unique(db, data["mobile"], exclude_id=cust.id)
 
     if "consumer_number" in data and data["consumer_number"] != cust.consumer_number:
         _check_consumer_number_unique(db, data["consumer_number"], exclude_id=cust.id)
@@ -179,6 +189,7 @@ def list_customers(
     village: Optional[str] = None,
     registered_from: Optional[date] = None,
     registered_to: Optional[date] = None,
+    do_id: Optional[int] = None,
     sort: Optional[str] = None,
     include_deleted: bool = False,
 ):
@@ -203,6 +214,8 @@ def list_customers(
         stmt = stmt.where(Customer.registration_date >= registered_from)
     if registered_to:
         stmt = stmt.where(Customer.registration_date <= registered_to)
+    if do_id is not None:
+        stmt = stmt.where(Customer.do_id == do_id)
 
     # Default sort: newest registration first, then name as tie-breaker.
     if sort == "name_asc":
@@ -326,10 +339,12 @@ def import_customers_from_excel(
             village = str(row.get("Village", "") or "").strip() or None
             city = str(row.get("City", "") or "").strip()
             consumer_number = str(row.get("Consumer_Number", "") or "").strip() or None
-            if not name or not mobile:
-                raise ValueError("Name and Mobile are required")
-            if not mobile.isdigit() or len(mobile) < 10:
-                raise ValueError("Mobile must be 10+ digits")
+            # Only Name is required. Mobile is optional — when provided it
+            # must be 10+ digits, when blank we accept the row.
+            if not name:
+                raise ValueError("Name is required")
+            if mobile and (not mobile.isdigit() or len(mobile) < 10):
+                raise ValueError("Mobile must be 10+ digits when provided")
 
             # DO column: accept "DO" or "DO_Code" header. Empty → fallback DO.
             do_raw = (row.get("DO") or row.get("DO_Code") or "")
@@ -355,14 +370,17 @@ def import_customers_from_excel(
                 or date.today()
             )
 
-            # skip if duplicate mobile OR duplicate consumer_number
-            exists = db.scalar(select(Customer).where(
-                Customer.mobile == mobile,
-                Customer.is_deleted.is_(False),
-            ))
-            if exists:
-                skipped += 1
-                continue
+            # Skip if duplicate mobile OR duplicate consumer_number — but
+            # only check mobile when one is actually provided (blank mobile
+            # is allowed for many customers).
+            if mobile:
+                exists = db.scalar(select(Customer).where(
+                    Customer.mobile == mobile,
+                    Customer.is_deleted.is_(False),
+                ))
+                if exists:
+                    skipped += 1
+                    continue
             if consumer_number and db.scalar(select(Customer).where(
                 Customer.consumer_number == consumer_number,
                 Customer.is_deleted.is_(False),
@@ -373,7 +391,11 @@ def import_customers_from_excel(
             cust = Customer(
                 consumer_number=consumer_number,
                 do_id=do.id,
-                name=name, mobile=mobile, village=village, city=city or village or "—",
+                name=name,
+                # mobile column is NOT NULL; store "" when blank.
+                mobile=mobile or "",
+                village=village,
+                city=city or village or "—",
                 customer_type=ctype, registration_date=reg_date,
                 opening_balance=op_bal, opening_empty_bottles=op_bot,
                 current_balance=op_bal, current_empty_bottles=op_bot,

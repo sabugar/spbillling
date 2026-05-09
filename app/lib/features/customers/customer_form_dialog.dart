@@ -105,11 +105,14 @@ class _CustomerFormDialogState extends ConsumerState<CustomerFormDialog> {
     try {
       final cityInput = _city.text.trim();
       final consumerInput = _consumerNumber.text.trim();
+      final mobileInput = _mobile.text.trim();
       final body = {
         if (consumerInput.isNotEmpty) 'consumer_number': consumerInput,
         'do_id': _selectedDO!.id,
         'name': _name.text.trim(),
-        'mobile': _mobile.text.trim(),
+        // Mobile is optional now — only send when the user actually typed
+        // something so the backend stores NULL/empty otherwise.
+        if (mobileInput.isNotEmpty) 'mobile': mobileInput,
         if (_altMobile.text.trim().isNotEmpty)
           'alternate_mobile': _altMobile.text.trim(),
         // Backend requires city NOT NULL.
@@ -166,9 +169,17 @@ class _CustomerFormDialogState extends ConsumerState<CustomerFormDialog> {
                   ],
                   _row([
                     _field(_name, 'Name *', validator: _required),
-                    _field(_mobile, 'Mobile *',
-                        validator: (v) =>
-                            (v == null || v.length < 10) ? 'Invalid' : null),
+                    _field(_mobile, 'Mobile',
+                        // Optional. Only validate format if user typed something.
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return null;
+                          if (!RegExp(r'^[0-9]+$').hasMatch(t)) {
+                            return 'Digits only';
+                          }
+                          if (t.length < 10) return 'Min 10 digits';
+                          return null;
+                        }),
                   ]),
                   _row([
                     _field(_altMobile, 'Alt mobile'),
