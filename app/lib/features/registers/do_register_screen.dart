@@ -10,7 +10,9 @@ import '../../core/io/web_download.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../data/models/bill.dart';
 import '../../data/models/distributor_outlet.dart';
+import '../../data/repositories/bill_repo.dart';
 import '../../data/repositories/report_repo.dart';
 import '../customers/customer_form_dialog.dart' show DOTypeahead;
 
@@ -26,6 +28,7 @@ class _DoRegisterScreenState extends ConsumerState<DoRegisterScreen> {
   DateTime _toDate = DateTime.now();
   DistributorOutlet? _selectedDO;
   Future<List<DoRegisterRow>>? _future;
+  Future<BillPage>? _billsFuture;
 
   static final _dateFmt = DateFormat('dd MMM yy');
   static final _monthFmt = DateFormat('MMMM yyyy');
@@ -42,6 +45,18 @@ class _DoRegisterScreenState extends ConsumerState<DoRegisterScreen> {
           toDate: _toDate,
           doId: _selectedDO?.id,
         );
+    // Fetch the actual bills for this DO + date range — the section below
+    // the rollup lists every bill with the customer's name so the owner
+    // can see who owes what / who got which bill #.
+    _billsFuture = _selectedDO == null
+        ? null
+        : ref.read(billRepoProvider).list(
+              page: 1,
+              perPage: 100, // backend caps per_page at 100
+              fromDate: _fromDate,
+              toDate: _toDate,
+              doId: _selectedDO!.id,
+            );
     setState(() {});
   }
 
@@ -147,7 +162,11 @@ class _DoRegisterScreenState extends ConsumerState<DoRegisterScreen> {
           const SizedBox(height: DT.s16),
           _filterCard(),
           const SizedBox(height: DT.s16),
-          Expanded(child: _tableCard()),
+          // When a DO is selected → show customer-wise bills detail.
+          // When no DO is selected → show the all-DOs date-rollup table.
+          Expanded(
+            child: _selectedDO == null ? _tableCard() : _billsCard(),
+          ),
         ],
       ),
     );
@@ -283,6 +302,177 @@ class _DoRegisterScreenState extends ConsumerState<DoRegisterScreen> {
             label: const Text('Reload'),
           ),
         ],
+      ),
+    );
+  }
+
+  static String _shortBillNo(String full) =>
+      full.contains('/') ? full.split('/').last : full;
+
+  Widget _billsCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: DT.surface,
+        borderRadius: BorderRadius.circular(DT.rMd),
+        border: Border.all(color: DT.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: FutureBuilder<BillPage>(
+        future: _billsFuture,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Text(snap.error.toString(),
+                  style: const TextStyle(color: DT.err700)),
+            );
+          }
+          final page = snap.data;
+          // Sort bills ascending by (date, bill_number) so the order matches
+          // the rollup table above.
+          final items = (page?.items ?? const <Bill>[]).toList()
+            ..sort((a, b) {
+              final c = a.billDate.compareTo(b.billDate);
+              return c != 0 ? c : a.billNumber.compareTo(b.billNumber);
+            });
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Section header
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: DT.s16, vertical: DT.s12),
+                color: DT.surface2,
+                child: Row(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined,
+                        size: 16, color: DT.text2),
+                    const SizedBox(width: DT.s8),
+                    Text(
+                      'Bills for ${_selectedDO!.code} / '
+                      '${_selectedDO!.ownerName} — customer-wise',
+                      style: const TextStyle(
+                          fontSize: DT.fsBody,
+                          fontWeight: FontWeight.w600,
+                          color: DT.text),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: DT.s8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: DT.brand50,
+                        borderRadius: BorderRadius.circular(DT.rXs),
+                      ),
+                      child: Text(
+                        '${page?.total ?? items.length} bill'
+                        '${(page?.total ?? items.length) == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                            color: DT.brand800,
+                            fontSize: DT.fsSm,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: DT.divider),
+              if (items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(DT.s24),
+                  child: Center(
+                    child: Text('No bills for this DO in the date range.',
+                        style: TextStyle(color: DT.text2)),
+                  ),
+                )
+              else
+                Expanded(
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.vertical,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minWidth: MediaQuery.of(context).size.width -
+                                DT.sidebarWidth -
+                                DT.s48 -
+                                2,
+                          ),
+                          child: DataTable(
+                            headingRowHeight: 36,
+                            headingRowColor:
+                                WidgetStateProperty.all(DT.surface),
+                            headingTextStyle: const TextStyle(
+                              fontSize: DT.fsSm,
+                              fontWeight: FontWeight.w600,
+                              color: DT.text2,
+                              letterSpacing: 0.3,
+                            ),
+                            dataRowMinHeight: 40,
+                            dataRowMaxHeight: 44,
+                            columnSpacing: DT.s24,
+                            horizontalMargin: DT.s16,
+                            columns: const [
+                              DataColumn(label: Text('BILL #')),
+                              DataColumn(label: Text('DATE')),
+                              DataColumn(label: Text('CUSTOMER')),
+                              DataColumn(label: Text('VILLAGE')),
+                              DataColumn(label: Text('MOBILE')),
+                              DataColumn(
+                                  label: Text('TOTAL'), numeric: true),
+                            ],
+                            rows: [
+                              for (final b in items)
+                                DataRow(cells: [
+                                  DataCell(Text(
+                                    '#${_shortBillNo(b.billNumber)}',
+                                    style: AppTheme.mono(size: 12).copyWith(
+                                        fontWeight: FontWeight.w600),
+                                  )),
+                                  DataCell(Text(
+                                      _dateFmt.format(b.billDate),
+                                      style: const TextStyle(
+                                          fontSize: DT.fsSm,
+                                          color: DT.text2))),
+                                  DataCell(Text(
+                                    b.customerName ?? '—',
+                                    style: const TextStyle(
+                                        fontSize: DT.fsBody,
+                                        fontWeight: FontWeight.w500,
+                                        color: DT.text),
+                                  )),
+                                  DataCell(Text(
+                                    b.customerVillage ?? '—',
+                                    style: const TextStyle(
+                                        fontSize: DT.fsSm,
+                                        color: DT.text2),
+                                  )),
+                                  DataCell(Text(
+                                    b.customerMobile ?? '—',
+                                    style: AppTheme.mono(size: 12)
+                                        .copyWith(color: DT.text2),
+                                  )),
+                                  DataCell(Text(
+                                    fmtINR(b.totalAmount),
+                                    style: AppTheme.mono(size: 12)
+                                        .copyWith(
+                                            fontWeight: FontWeight.w600),
+                                  )),
+                                ]),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

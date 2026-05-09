@@ -10,7 +10,7 @@ from app.schemas.distributor_outlet import DOSearchResult
 
 class CustomerBase(BaseModel):
     name: str = Field(..., max_length=150)
-    mobile: str = Field(..., min_length=10, max_length=15)
+    mobile: Optional[str] = Field(None, max_length=15)
     alternate_mobile: Optional[str] = Field(None, max_length=15)
     village: Optional[str] = Field(None, max_length=100)
     city: str = Field(..., max_length=100)
@@ -28,8 +28,10 @@ class CustomerBase(BaseModel):
     @classmethod
     def digits_only(cls, v):
         if v is None:
-            return v
+            return None
         v = v.strip()
+        if v == "":
+            return None  # treat empty string as "no mobile"
         if not v.isdigit():
             raise ValueError("mobile must contain digits only")
         return v

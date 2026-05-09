@@ -668,16 +668,57 @@ def import_bills_from_excel(
         }
         try:
             mobile = str(col(row, "mobile") or "").strip()
-            if not mobile:
-                raise ValueError("Mobile is required")
-            cust = db.scalar(
-                select(Customer).where(
-                    Customer.mobile == mobile,
-                    Customer.is_deleted.is_(False),
+            consumer_no = str(
+                col(row, "consumer_number", "consumer_no") or ""
+            ).strip()
+            cust_name = str(col(row, "name", "customer") or "").strip()
+
+            cust: Optional[Customer] = None
+            if mobile:
+                cust = db.scalar(
+                    select(Customer).where(
+                        Customer.mobile == mobile,
+                        Customer.is_deleted.is_(False),
+                    )
                 )
-            )
-            if not cust:
-                raise ValueError(f"Customer with mobile {mobile} not found")
+                if not cust:
+                    raise ValueError(
+                        f"Customer with mobile {mobile} not found"
+                    )
+            elif consumer_no:
+                cust = db.scalar(
+                    select(Customer).where(
+                        Customer.consumer_number == consumer_no,
+                        Customer.is_deleted.is_(False),
+                    )
+                )
+                if not cust:
+                    raise ValueError(
+                        f"Customer with consumer # {consumer_no} not found"
+                    )
+            elif cust_name:
+                # Name fallback — must be unique. If multiple customers share
+                # the same name, the row errors with a helpful message.
+                matches = list(db.scalars(
+                    select(Customer).where(
+                        func.lower(Customer.name) == cust_name.lower(),
+                        Customer.is_deleted.is_(False),
+                    )
+                ).all())
+                if not matches:
+                    raise ValueError(
+                        f"Customer named '{cust_name}' not found"
+                    )
+                if len(matches) > 1:
+                    raise ValueError(
+                        f"{len(matches)} customers named '{cust_name}' — "
+                        f"add Mobile or Consumer_Number to disambiguate"
+                    )
+                cust = matches[0]
+            else:
+                raise ValueError(
+                    "Provide at least one of: Mobile, Consumer_Number, Name"
+                )
 
             bill_date = _parse_bill_date(col(row, "date", "bill_date"))
             if not bill_date:

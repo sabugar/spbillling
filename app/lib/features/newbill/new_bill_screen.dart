@@ -14,6 +14,42 @@ import '../../data/models/customer.dart';
 import '../../data/models/product.dart';
 import '../customers/customer_form_dialog.dart';
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /// Route `/bills/new`.
 class NewBillScreen extends ConsumerStatefulWidget {
   const NewBillScreen({super.key});
@@ -465,7 +501,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                             title: Text(
                                 '${c.name}$villageSuffix${doCode.isEmpty ? '' : '  ·  DO $doCode'}'),
                             subtitle: Text(
-                              '${c.mobile}${cn?.isNotEmpty == true ? '  ·  $cn' : ''}',
+                              '${c.mobile ?? '—'}${cn?.isNotEmpty == true ? '  ·  $cn' : ''}',
                               style:
                                   AppTheme.mono(size: 11, color: DT.text2),
                             ),
@@ -544,7 +580,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                     ],
                   ),
                   Text(
-                    '${_selectedCustomer!.mobile}${_selectedCustomer!.consumerNumber?.isNotEmpty == true ? '  ·  ${_selectedCustomer!.consumerNumber}' : ''}${_selectedCustomer!.distributorOutlet == null ? '' : '  ·  DO ${_selectedCustomer!.distributorOutlet!.code}'}',
+                    '${_selectedCustomer!.mobile ?? '—'}${_selectedCustomer!.consumerNumber?.isNotEmpty == true ? '  ·  ${_selectedCustomer!.consumerNumber}' : ''}${_selectedCustomer!.distributorOutlet == null ? '' : '  ·  DO ${_selectedCustomer!.distributorOutlet!.code}'}',
                     style: AppTheme.mono(size: 11, color: DT.text2),
                   ),
                   const SizedBox(height: DT.s8),

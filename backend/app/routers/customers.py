@@ -25,6 +25,7 @@ def list_customers(
     customer_type: Optional[CustomerType] = None,
     status: Optional[CustomerStatus] = None,
     village: Optional[str] = None,
+    do_id: Optional[int] = Query(None),
     registered_from: Optional[date] = Query(None),
     registered_to: Optional[date] = Query(None),
     sort: Optional[str] = Query(
@@ -38,6 +39,7 @@ def list_customers(
 ):
     stmt = customer_service.list_customers(
         db, q=q, customer_type=customer_type, status=status, village=village,
+        do_id=do_id,
         registered_from=registered_from, registered_to=registered_to, sort=sort,
     )
     return paginate(db, stmt, page=page, per_page=per_page, item_schema=CustomerOut)

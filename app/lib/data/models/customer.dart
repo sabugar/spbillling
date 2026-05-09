@@ -34,7 +34,9 @@ class Customer {
   final int doId;
   final DistributorOutlet? distributorOutlet;
   final String name;
-  final String mobile;
+  // Mobile is now optional on the backend — can be null/empty for some
+  // customers. Treat as nullable here too.
+  final String? mobile;
   final String? altMobile;
   final String? village;
   final String? city;
@@ -56,7 +58,7 @@ class Customer {
     required this.doId,
     this.distributorOutlet,
     required this.name,
-    required this.mobile,
+    this.mobile,
     this.altMobile,
     this.village,
     this.city,
@@ -82,7 +84,7 @@ class Customer {
                 Map<String, dynamic>.from(j['distributor_outlet'] as Map))
             : null,
         name: j['name'] as String,
-        mobile: j['mobile'] as String,
+        mobile: j['mobile'] as String?,
         altMobile:
             (j['alternate_mobile'] ?? j['alt_mobile']) as String?,
         village: j['village'] as String?,

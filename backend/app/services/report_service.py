@@ -5,11 +5,11 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -424,43 +424,129 @@ def daily_register_excel(
     return buf.getvalue()
 
 
-def _table_pdf(title: str, headers: list[str], data: list[list],
-               totals: list | None = None) -> bytes:
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=12 * mm, bottomMargin=12 * mm,
+_BRAND = colors.HexColor("#0F766E")
+_BRAND_LIGHT = colors.HexColor("#CCFBF1")
+_BRAND_TINT = colors.HexColor("#E0F2F1")
+_TEXT2 = colors.HexColor("#475569")
+_BORDER = colors.HexColor("#CBD5E1")
+_ZEBRA = colors.HexColor("#F8FAFC")
+
+
+def _title_para(text: str) -> Paragraph:
+    return Paragraph(
+        text,
+        ParagraphStyle(
+            "TitleBig",
+            fontName="Helvetica-Bold",
+            fontSize=20,
+            textColor=_BRAND,
+            leading=24,
+            spaceAfter=2,
+        ),
     )
-    styles = getSampleStyleSheet()
-    story = [Paragraph(f"<b>{title}</b>", styles["Title"]), Spacer(1, 6)]
+
+
+def _subtitle_para(text: str) -> Paragraph:
+    return Paragraph(
+        text,
+        ParagraphStyle(
+            "Sub",
+            fontName="Helvetica",
+            fontSize=11,
+            textColor=_TEXT2,
+            leading=14,
+            spaceAfter=10,
+        ),
+    )
+
+
+def _section_para(text: str) -> Paragraph:
+    return Paragraph(
+        text,
+        ParagraphStyle(
+            "Section",
+            fontName="Helvetica-Bold",
+            fontSize=12,
+            textColor=_BRAND,
+            leading=16,
+            spaceBefore=12,
+            spaceAfter=6,
+        ),
+    )
+
+
+def _make_table(
+    headers: list[str],
+    data: list[list],
+    *,
+    col_widths: list | None = None,
+    totals: list | None = None,
+    right_align_cols: list[int] | None = None,
+    center_align_cols: list[int] | None = None,
+) -> Table:
+    """Return a styled Table. Body rows alternate with a light stripe; the
+    header row has a brand-coloured fill, and optional totals row is bold."""
     body = [headers] + data
     if totals:
         body.append(totals)
-    tbl = Table(body, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
+    tbl = Table(body, colWidths=col_widths, repeatRows=1)
+    cmds = [
+        # Header
+        ("BACKGROUND", (0, 0), (-1, 0), _BRAND),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE", (0, 0), (-1, 0), 10.5),
         ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-        ("ALIGN", (-2, 1), (-1, -1), "RIGHT"),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E4E7EE")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2 if totals else -1),
-         [colors.white, colors.HexColor("#F7F8FB")]),
-        ("BACKGROUND", (0, -1), (-1, -1),
-         colors.HexColor("#F1F3F8") if totals else colors.white),
-        ("FONTNAME", (0, -1), (-1, -1),
-         "Helvetica-Bold" if totals else "Helvetica"),
+        ("TOPPADDING", (0, 0), (-1, 0), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 9),
+        # Body
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), 10),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story.append(tbl)
-    doc.build(story)
-    return buf.getvalue()
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 1), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.5, _BORDER),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2 if totals else -1),
+         [colors.white, _ZEBRA]),
+    ]
+    for c in right_align_cols or []:
+        cmds.append(("ALIGN", (c, 1), (c, -1), "RIGHT"))
+        cmds.append(("FONTNAME", (c, 1), (c, -1), "Courier"))
+    for c in center_align_cols or []:
+        cmds.append(("ALIGN", (c, 1), (c, -1), "CENTER"))
+    if totals:
+        cmds.extend([
+            ("BACKGROUND", (0, -1), (-1, -1), _BRAND_TINT),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("FONTSIZE", (0, -1), (-1, -1), 10.5),
+            ("TEXTCOLOR", (0, -1), (-1, -1), _BRAND),
+            ("TOPPADDING", (0, -1), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, -1), (-1, -1), 9),
+        ])
+    tbl.setStyle(TableStyle(cmds))
+    return tbl
+
+
+def _new_doc(buf: BytesIO, *, landscape_mode: bool = False) -> SimpleDocTemplate:
+    page = landscape(A4) if landscape_mode else A4
+    return SimpleDocTemplate(
+        buf, pagesize=page,
+        leftMargin=14 * mm, rightMargin=14 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
+        title="SP Gas Register",
+    )
+
+
+def _header_block(title: str, subtitle: str | None = None) -> list:
+    block = [_title_para(title)]
+    if subtitle:
+        block.append(_subtitle_para(subtitle))
+    block.append(HRFlowable(
+        width="100%", thickness=1.2, color=_BRAND, spaceBefore=2, spaceAfter=12,
+    ))
+    return block
 
 
 def daily_register_pdf(
@@ -471,10 +557,21 @@ def daily_register_pdf(
     do_id: int | None = None,
 ) -> bytes:
     rows = daily_register(db, from_date, to_date, do_id=do_id)
-    title = (
-        f"Daily Register · {from_date.strftime('%d %b %Y')} → "
-        f"{to_date.strftime('%d %b %Y')}"
+    subtitle_parts = [
+        f"{from_date.strftime('%d %b %Y')} → {to_date.strftime('%d %b %Y')}",
+        f"{len(rows)} day{'s' if len(rows) != 1 else ''}",
+    ]
+    buf = BytesIO()
+    doc = _new_doc(buf)
+    story: list = _header_block(
+        "Daily Register", " · ".join(subtitle_parts),
     )
+
+    if not rows:
+        story.append(_subtitle_para("No bills in the selected range."))
+        doc.build(story)
+        return buf.getvalue()
+
     data = [
         [_fmt_date_str(r["date"]), r["bill_from"], r["bill_to"],
          str(r["qty"]), f"Rs. {Decimal(r['total']):,.2f}"]
@@ -483,10 +580,18 @@ def daily_register_pdf(
     total_qty = sum(r["qty"] for r in rows)
     total_amt = sum(Decimal(r["total"]) for r in rows) if rows else Decimal("0")
     totals = ["TOTAL", "", "", str(total_qty), f"Rs. {total_amt:,.2f}"]
-    return _table_pdf(
-        title, ["Date", "Bill # From", "Bill # To", "Qty", "Total"],
-        data, totals,
-    )
+    # Wider date column, narrower bill columns, total on the right.
+    col_widths = [32 * mm, 28 * mm, 28 * mm, 22 * mm, 38 * mm]
+    story.append(_make_table(
+        ["Date", "Bill # From", "Bill # To", "Qty", "Total"],
+        data,
+        col_widths=col_widths,
+        totals=totals,
+        right_align_cols=[3, 4],
+        center_align_cols=[1, 2],
+    ))
+    doc.build(story)
+    return buf.getvalue()
 
 
 def do_register_excel(
@@ -541,6 +646,25 @@ def do_register_excel(
     return buf.getvalue()
 
 
+def _bills_for_do_pdf(
+    db: Session, from_date: date, to_date: date, do_id: int
+) -> list[Bill]:
+    """Helper used by the DO Register PDF for the bill-by-bill detail section.
+    Returns confirmed bills for the DO inside the date range, sorted asc."""
+    stmt = (
+        select(Bill)
+        .join(Customer, Bill.customer_id == Customer.id)
+        .where(
+            Bill.bill_date >= from_date,
+            Bill.bill_date <= to_date,
+            Bill.status == BillStatus.CONFIRMED,
+            Customer.do_id == do_id,
+        )
+        .order_by(Bill.bill_date.asc(), Bill.bill_number.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
 def do_register_pdf(
     db: Session,
     from_date: date,
@@ -550,20 +674,94 @@ def do_register_pdf(
 ) -> bytes:
     rows = do_register(db, from_date, to_date, do_id=do_id)
     rows.sort(key=lambda r: (r["date"], r["do_code"]))
-    title = "DO Register"
+
+    # Subtitle line carries the date window + DO scope.
     if do_id and rows:
-        title += f" — {rows[0]['do_code']} / {rows[0]['do_name']}"
-    title += (
-        f" · {from_date.strftime('%d %b %Y')} to {to_date.strftime('%d %b %Y')}"
-    )
-    headers = ["DO", "Date", "Bill # From", "Bill # To", "Qty", "Total"]
-    data = [
-        [f"{r['do_code']} · {r['do_name']}", _fmt_date_str(r["date"]),
-         r["bill_from"], r["bill_to"], str(r["qty"]),
-         f"Rs. {Decimal(r['total']):,.2f}"]
-        for r in rows
-    ]
-    total_qty = sum(r["qty"] for r in rows)
-    total_amt = sum(Decimal(r["total"]) for r in rows) if rows else Decimal("0")
-    totals = ["TOTAL", "", "", "", str(total_qty), f"Rs. {total_amt:,.2f}"]
-    return _table_pdf(title, headers, data, totals)
+        title = f"DO Register — {rows[0]['do_code']} / {rows[0]['do_name']}"
+        subtitle_lines = [
+            (rows[0].get("do_location") or "").strip(),
+            f"{from_date.strftime('%d %b %Y')} → {to_date.strftime('%d %b %Y')}",
+        ]
+        subtitle = " · ".join(s for s in subtitle_lines if s)
+    else:
+        title = "DO Register — All outlets"
+        subtitle = (
+            f"{from_date.strftime('%d %b %Y')} → "
+            f"{to_date.strftime('%d %b %Y')}"
+        )
+
+    buf = BytesIO()
+    # Use landscape when we'll show the bill-by-bill detail (more columns).
+    landscape_mode = bool(do_id)
+    doc = _new_doc(buf, landscape_mode=landscape_mode)
+    story: list = _header_block(title, subtitle)
+
+    if not rows:
+        story.append(_subtitle_para("No bills in the selected range."))
+        doc.build(story)
+        return buf.getvalue()
+
+    if do_id:
+        # ---------- Single DO: bill-by-bill customer detail only -----------
+        bills = _bills_for_do_pdf(db, from_date, to_date, do_id)
+        if not bills:
+            story.append(_subtitle_para(
+                "No bills found for this DO in the selected range."
+            ))
+        else:
+            detail_data = []
+            for b in bills:
+                cust = b.customer
+                short_no = b.bill_number.rsplit("/", 1)[-1]
+                name = cust.name if cust else "—"
+                # Truncate gracefully so cells don't blow up the row height.
+                if len(name) > 32:
+                    name = name[:31] + "…"
+                mobile = (cust.mobile if cust else "") or "—"
+                detail_data.append([
+                    f"#{short_no}",
+                    b.bill_date.strftime("%d %b %Y"),
+                    name,
+                    mobile,
+                    f"Rs. {Decimal(b.total_amount):,.2f}",
+                ])
+            d_total = sum(Decimal(b.total_amount) for b in bills)
+            d_totals = ["TOTAL", "", "",
+                        f"{len(bills)} bills",
+                        f"Rs. {d_total:,.2f}"]
+            # Landscape A4 usable width ≈ 269mm. Five columns now (no village).
+            col_widths = [28 * mm, 38 * mm, 95 * mm, 50 * mm, 58 * mm]
+            story.append(_make_table(
+                ["Bill #", "Date", "Customer", "Mobile", "Total"],
+                detail_data,
+                col_widths=col_widths,
+                totals=d_totals,
+                right_align_cols=[4],
+                center_align_cols=[0, 1],
+            ))
+    else:
+        # ---------- All-DOs view: per-(DO, day) rollup ---------------------
+        data = [
+            [r["do_code"], r["do_name"][:28], _fmt_date_str(r["date"]),
+             r["bill_from"], r["bill_to"], str(r["qty"]),
+             f"Rs. {Decimal(r['total']):,.2f}"]
+            for r in rows
+        ]
+        total_qty = sum(r["qty"] for r in rows)
+        total_amt = sum(Decimal(r["total"]) for r in rows)
+        totals = ["TOTAL", "", "", "", "", str(total_qty),
+                  f"Rs. {total_amt:,.2f}"]
+        col_widths = [22 * mm, 50 * mm, 30 * mm, 24 * mm, 24 * mm,
+                      18 * mm, 34 * mm]
+        story.append(_make_table(
+            ["DO", "Owner", "Date", "Bill # From", "Bill # To",
+             "Qty", "Total"],
+            data,
+            col_widths=col_widths,
+            totals=totals,
+            right_align_cols=[5, 6],
+            center_align_cols=[0, 3, 4],
+        ))
+
+    doc.build(story)
+    return buf.getvalue()
