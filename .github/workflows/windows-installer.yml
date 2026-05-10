@@ -113,6 +113,7 @@ jobs:
           # Backend source (exclude __pycache__, venv, .env)
           robocopy backend "$payload\backend" /E /XD __pycache__ venv .venv /XF .env | Out-Null
           if ($LASTEXITCODE -ge 8) { throw "robocopy backend failed: $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0  # robocopy uses 0-7 for success; reset so the step doesn't appear failed
 
           # Embedded Python
           Copy-Item "python-embed\*" -Destination "$payload\python" -Recurse -Force
