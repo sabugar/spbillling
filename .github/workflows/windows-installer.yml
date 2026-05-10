@@ -103,6 +103,9 @@ jobs:
         run: |
           $payload = "packaging\payload"
           New-Item -ItemType Directory -Force -Path $payload | Out-Null
+          foreach ($d in @('app','python','pgsql','scripts','tools')) {
+            New-Item -ItemType Directory -Force -Path "$payload\$d" | Out-Null
+          }
 
           # Flutter app
           Copy-Item "app\build\windows\x64\runner\Release\*" -Destination "$payload\app" -Recurse -Force
@@ -110,6 +113,7 @@ jobs:
           # Backend source (exclude __pycache__, venv, .env)
           robocopy backend "$payload\backend" /E /XD __pycache__ venv .venv /XF .env | Out-Null
           if ($LASTEXITCODE -ge 8) { throw "robocopy backend failed: $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0  # robocopy uses 0-7 for success; reset so the step doesn't appear failed
 
           # Embedded Python
           Copy-Item "python-embed\*" -Destination "$payload\python" -Recurse -Force
@@ -118,7 +122,6 @@ jobs:
           Copy-Item "pgsql-extract\pgsql\*" -Destination "$payload\pgsql" -Recurse -Force
 
           # NSSM (win64)
-          New-Item -ItemType Directory -Force -Path "$payload\tools" | Out-Null
           Copy-Item "nssm-extract\nssm-$env:NSSM_VERSION\win64\nssm.exe" -Destination "$payload\tools\nssm.exe" -Force
 
           # Helper scripts
