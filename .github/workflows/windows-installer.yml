@@ -103,6 +103,9 @@ jobs:
         run: |
           $payload = "packaging\payload"
           New-Item -ItemType Directory -Force -Path $payload | Out-Null
+          foreach ($d in @('app','python','pgsql','scripts','tools')) {
+            New-Item -ItemType Directory -Force -Path "$payload\$d" | Out-Null
+          }
 
           # Flutter app
           Copy-Item "app\build\windows\x64\runner\Release\*" -Destination "$payload\app" -Recurse -Force
@@ -118,7 +121,6 @@ jobs:
           Copy-Item "pgsql-extract\pgsql\*" -Destination "$payload\pgsql" -Recurse -Force
 
           # NSSM (win64)
-          New-Item -ItemType Directory -Force -Path "$payload\tools" | Out-Null
           Copy-Item "nssm-extract\nssm-$env:NSSM_VERSION\win64\nssm.exe" -Destination "$payload\tools\nssm.exe" -Force
 
           # Helper scripts
